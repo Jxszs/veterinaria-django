@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block title %}Mascotas - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Mascotas registradas</h1>
+    {% if perms.mascotas.add_mascota %}
+        <a href="{% url 'mascotas:crear' %}" class="btn btn-success">+ Nueva mascota</a>
+    {% endif %}
+</div>
+
+{% if total_pendientes %}
+    <a href="?estado=pendiente"
+       class="alert alert-danger d-block text-decoration-none {% if estado_seleccionado == 'pendiente' %}border border-3 border-dark{% endif %}">
+        ⚠️ Hay <strong>{{ total_pendientes }}</strong> mascota{{ total_pendientes|pluralize }}
+        sin vacunar. Click para verlas.
+    </a>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label mb-1">Buscar por nombre</label>
+                <input type="text" name="q" value="{{ query }}" class="form-control"
+                       placeholder="Ej: Firulais">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1">Especie</label>
+                <select name="especie" class="form-select">
+                    <option value="">Todas</option>
+                    {% for especie in especies %}
+                        <option value="{{ especie }}" {% if especie == especie_seleccionada %}selected{% endif %}>
+                            {{ especie }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1">Estado de vacunación</label>
+                <select name="estado" class="form-select">
+                    <option value="">Todos</option>
+                    <option value="al_dia" {% if estado_seleccionado == 'al_dia' %}selected{% endif %}>Al día</option>
+                    <option value="pendiente" {% if estado_seleccionado == 'pendiente' %}selected{% endif %}>Pendiente</option>
+                    <option value="alergia" {% if estado_seleccionado == 'alergia' %}selected{% endif %}>Alergia</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary">Filtrar</button>
+            </div>
+        </form>
+        {% if query or especie_seleccionada or estado_seleccionado %}
+            <a href="{% url 'mascotas:lista' %}" class="d-inline-block mt-2 small">Limpiar filtros</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered align-middle bg-white">
+        <thead class="table-dark">
+            <tr>
+                <th>Nombre</th>
+                <th>Especie</th>
+                <th>Edad</th>
+                <th>Vacunado</th>
+                {% if perms.mascotas.change_mascota or perms.mascotas.delete_mascota %}
+                    <th>Acciones</th>
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for mascota in mascotas %}
+                <tr class="{% if mascota.alergico %}table-alergia{% elif mascota.vacunado %}table-al-dia{% else %}table-pendiente{% endif %}">
+                    <td>{{ mascota.nombre }}</td>
+                    <td>{{ mascota.especie }}</td>
+                    <td>{{ mascota.edad }}</td>
+                    <td>
+                        {% if mascota.alergico %}
+                            <span class="badge badge-alergia">🟡 Alergia</span>
+                        {% elif mascota.vacunado %}
+                            <span class="badge badge-al-dia">🟢 Sí</span>
+                        {% else %}
+                            <span class="badge badge-pendiente">🔴 No</span>
+                        {% endif %}
+                    </td>
+                    {% if perms.mascotas.change_mascota or perms.mascotas.delete_mascota %}
+                        <td class="text-nowrap">
+                            {% if perms.mascotas.change_mascota %}
+                                <a href="{% url 'mascotas:editar' mascota.pk %}" class="btn btn-sm btn-outline-primary">Editar</a>
+                            {% endif %}
+                            {% if perms.mascotas.delete_mascota %}
+                                <a href="{% url 'mascotas:eliminar' mascota.pk %}" class="btn btn-sm btn-outline-danger">Eliminar</a>
+                            {% endif %}
+                        </td>
+                    {% endif %}
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-4">No hay mascotas que coincidan con la búsqueda.</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
