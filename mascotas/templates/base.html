@@ -20,10 +20,10 @@
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="{% url 'mascotas:lista' %}">🐾 Clínica Veterinaria</a>
-            <div class="d-flex align-items-center">
-                {% if user.is_authenticated %}
+      <div class="container">
+          <a class="navbar-brand" href="{% url 'mascotas:lista' %}">🐾 Clínica Veterinaria</a>
+          <div class="d-flex align-items-center">
+               {% if user.is_authenticated %}
                     <span class="text-light me-3">
                         Hola, {{ user.get_username }}
                         {% if perms.mascotas.add_mascota %}
@@ -32,16 +32,23 @@
                             <span class="badge bg-secondary ms-1">Veterinario</span>
                         {% endif %}
                     </span>
+
+                   <!-- 🔹 Botón visible solo para superusuarios -->
+                    {% if user.is_superuser %}
+                        <a href="/admin/" class="btn btn-warning btn-sm me-2">Panel Admin</a>
+                    {% endif %}
+
                     <form method="post" action="{% url 'logout' %}" class="mb-0">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-outline-light btn-sm">Cerrar sesión</button>
-                    </form>
-                {% else %}
+                   </form>
+             {% else %}
                     <a class="btn btn-outline-light btn-sm" href="{% url 'login' %}">Iniciar sesión</a>
                 {% endif %}
             </div>
         </div>
     </nav>
+
 
     <div class="container mb-5">
         {% if messages %}

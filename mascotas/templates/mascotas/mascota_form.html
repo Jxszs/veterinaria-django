@@ -26,6 +26,24 @@
                         <a href="{% url 'mascotas:lista' %}" class="btn btn-secondary">Cancelar</a>
                     </div>
                 </form>
+
+                <!-- 🔹 Script de exclusividad -->
+                <script>
+                  const vacunado = document.getElementById('id_vacunado');
+                  const alergico = document.getElementById('id_alergico');
+
+                  function exclusividad(clicked) {
+                    if (clicked === vacunado) {
+                      alergico.checked = false;
+                    }
+                    if (clicked === alergico) {
+                      vacunado.checked = false;
+                    }
+                  }
+
+                  if (vacunado) vacunado.addEventListener('change', () => exclusividad(vacunado));
+                  if (alergico) alergico.addEventListener('change', () => exclusividad(alergico));
+                </script>
             </div>
         </div>
     </div>
