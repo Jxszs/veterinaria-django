@@ -9,9 +9,10 @@ https://docs.djangoproject.com/en/4.2/topics/settings/
 
 import os
 from pathlib import Path
-
+from django.core.exceptions import ImproperlyConfigured
 from django.contrib.messages import constants as message_constants
 from dotenv import load_dotenv
+import dj_database_url
 
 # Cargar variables desde .env (si existe)
 # .env NO se sube a GitHub (ver .gitignore)
@@ -27,10 +28,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECRET_KEY es obligatorio. Si no está definido, el servidor no arranca.
 SECRET_KEY = os.getenv('SECRET_KEY')
+# Línea 30-33 (actual):
 if not SECRET_KEY:
-    raise ImproperlyConfigured(
+    raise ImproperlyConfigured(          # ← este nombre se usa aquí
         'Falta SECRET_KEY. Copia .env.example como .env y completa sus valores.'
     )
+
 
 # DEBUG: True para desarrollo, False para producción. Por defecto True.
 DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 'si', 'yes')
@@ -99,17 +102,15 @@ database_url = os.getenv('DATABASE_URL', '').strip()
 if database_url:
     # Django puede parsear directamente una URL de base de datos.
     DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': database_url,
-        }
+        'default': dj_database_url.parse(database_url)
     }
 else:
     DATABASES = {
-        'default': {
-            'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.sqlite3'),
-            'NAME': BASE_DIR / os.getenv('DB_NAME', 'db.sqlite3'),
-        }
+      'default': dj_database_url.parse(
+        os.getenv("DATABASE_URL"),
+        conn_max_age=600,
+        ssl_require=True
+    )  
     }
 
 
