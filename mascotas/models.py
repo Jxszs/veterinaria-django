@@ -1,4 +1,6 @@
 from django.db import models
+from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 
 class Mascota(models.Model):
@@ -14,13 +16,25 @@ class Mascota(models.Model):
     """
     nombre = models.CharField(max_length=100)
     especie = models.CharField(max_length=50)
-    edad = models.IntegerField()
+    edad = models.IntegerField(
+        validators=[
+            MinValueValidator(0, message='La edad no puede ser negativa.'),
+            MaxValueValidator(40, message='La edad no puede ser mayor a 40 años.'),
+        ]
+    )
     vacunado = models.BooleanField(default=False)
     alergico = models.BooleanField(
         default=False,
         verbose_name='Alérgico a las vacunas',
         help_text='Marcar si la mascota no puede recibir vacunas por alergia.',
     )
+
+    def clean(self):
+        super().clean()
+        if self.vacunado and self.alergico:
+            raise ValidationError(
+                'Una mascota no puede estar vacunada y ser alérgica a las vacunas a la vez.'
+            )
 
     def __str__(self):
         return self.nombre

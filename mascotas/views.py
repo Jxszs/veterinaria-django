@@ -9,19 +9,13 @@ from .forms import MascotaForm
 from .models import Mascota
 
 logger = logging.getLogger(__name__)
-ERROR_BD = 'No se pudo conectar con la base de datos. Intenta nuevamente en unos minutes.'
+ERROR_BD = 'No se pudo conectar con la base de datos. Intenta nuevamente en unos minutos.'
 
 
 @login_required
 def listar_mascotas(request):
     """
     Vista principal: muestra TODAS las mascotas de la clínica.
-
-    - Consulta los datos con Mascota.objects.all() (ordenados alfabéticamente
-      por el Meta.ordering del modelo).
-    - Permite filtrar esa misma consulta por nombre, especie y estado de
-      vacunación usando los parámetros de la URL (?q=, ?especie=, ?estado=).
-    - Si la base de datos falla, muestra un mensaje claro en vez de un error 500.
     """
     query = request.GET.get('q', '').strip()[:100]
     especie = request.GET.get('especie', '').strip()[:50]
@@ -52,7 +46,6 @@ def listar_mascotas(request):
         elif estado == 'alergia':
             mascotas = mascotas.filter(alergico=True)
 
-        # list() obliga a ejecutar la consulta aquí, dentro del try.
         contexto['mascotas'] = list(mascotas)
         contexto['especies'] = list(
             Mascota.objects.order_by('especie').values_list('especie', flat=True).distinct()

@@ -157,3 +157,101 @@ class SetupGruposCommandTest(TestCase):
             set(administradores.permissions.values_list('codename', flat=True)),
             {'view_mascota', 'add_mascota', 'change_mascota', 'delete_mascota'},
         )
+class MascotaValidacionTest(TestCase):
+    """Pruebas de validación y sanitización del formulario."""
+
+    def datos(self, **cambios):
+        base = {'nombre': 'Rocky', 'especie': 'Perro', 'edad': 4}
+        base.update(cambios)
+        return base
+
+    def test_datos_correctos_son_validos(self):
+        from .forms import MascotaForm
+        self.assertTrue(MascotaForm(self.datos()).is_valid())
+
+    def test_rechaza_edad_negativa(self):
+        from .forms import MascotaForm
+        form = MascotaForm(self.datos(edad=-5))
+        self.assertFalse(form.is_valid())
+        self.assertIn('edad', form.errors)
+
+    def test_rechaza_edad_mayor_a_40(self):
+        from .forms import MascotaForm
+        form = MascotaForm(self.datos(edad=300))
+        self.assertFalse(form.is_valid())
+        self.assertIn('edad', form.errors)
+
+    def test_rechaza_vacunado_y_alergico_a_la_vez(self):
+        from .forms import MascotaForm
+        form = MascotaForm(self.datos(vacunado='on', alergico='on'))
+        self.assertFalse(form.is_valid())
+        self.assertTrue(form.non_field_errors())
+
+    def test_rechaza_numeros_en_especie(self):
+        from .forms import MascotaForm
+        form = MascotaForm(self.datos(especie='123'))
+        self.assertFalse(form.is_valid())
+        self.assertIn('especie', form.errors)
+
+    def test_rechaza_nombre_de_una_letra(self):
+        from .forms import MascotaForm
+        self.assertFalse(MascotaForm(self.datos(nombre='X')).is_valid())
+
+    def test_sanitiza_html_y_espacios(self):
+        from .forms import MascotaForm
+        form = MascotaForm(self.datos(nombre='  <b>max</b>   power ', especie='PERRO'))
+        self.assertTrue(form.is_valid())
+        self.assertEqual(form.cleaned_data['nombre'], 'Max Power')
+        self.assertEqual(form.cleaned_data['especie'], 'Perro')
+
+    def test_crear_con_error_muestra_mensaje_y_no_guarda(self):
+        admin = User.objects.create_user(username='adm', password='clave12345')
+        content_type = ContentType.objects.get_for_model(Mascota)
+        admin.user_permissions.add(
+            Permission.objects.get(content_type=content_type, codename='add_mascota')
+        )
+        self.client.login(username='adm', password='clave12345')
+        response = self.client.post(reverse('mascotas:crear'), self.datos(edad=-1))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'La edad no puede ser negativa.')
+        self.assertFalse(Mascota.objects.exists())
+
+
+class ManejoErroresBDTest(TestCase):
+    """Si la base de datos falla, el usuario ve un mensaje claro y no un error 500."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(username='root', password='clave12345')
+        self.client.login(username='root', password='clave12345')
+        self.mascota = Mascota.objects.create(nombre='Rocky', especie='Perro', edad=4)
+
+    def test_error_al_guardar_muestra_mensaje(self):
+        from unittest.mock import patch
+        from django.db import DatabaseError
+
+        with patch('mascotas.forms.MascotaForm.save', side_effect=DatabaseError), \
+                self.assertLogs('mascotas.views', level='ERROR'):
+            response = self.client.post(
+                reverse('mascotas:crear'),
+                {'nombre': 'Luna', 'especie': 'Gato', 'edad': 2},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'No se pudo guardar la mascota.')
+
+    def test_error_al_eliminar_muestra_mensaje(self):
+        from unittest.mock import patch
+        from django.db import DatabaseError
+
+        with patch('mascotas.models.Mascota.delete', side_effect=DatabaseError), \
+                self.assertLogs('mascotas.views', level='ERROR'):
+            response = self.client.post(
+                reverse('mascotas:eliminar', args=[self.mascota.pk]), follow=True
+            )
+        self.assertContains(response, 'No se pudo eliminar a')
+        self.assertTrue(Mascota.objects.filter(pk=self.mascota.pk).exists())
+
+    def test_usuario_sin_rol_ve_insignia_correcta(self):
+        User.objects.create_user(username='nuevo', password='clave12345')
+        self.client.login(username='nuevo', password='clave12345')
+        response = self.client.get(reverse('mascotas:lista'))
+        self.assertContains(response, 'Sin rol asignado')

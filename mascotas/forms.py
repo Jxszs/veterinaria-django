@@ -34,6 +34,7 @@ class MascotaForm(forms.ModelForm):
             'edad': forms.NumberInput(attrs={
                 'class': 'form-control',
                 'min': 0,
+                'max': 40,
             }),
             'vacunado': forms.CheckboxInput(attrs={
                 'class': 'form-check-input',
