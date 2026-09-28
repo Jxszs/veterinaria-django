@@ -13,6 +13,9 @@ from pathlib import Path
 from django.contrib.messages import constants as message_constants
 from dotenv import load_dotenv
 
+import dj_database_url
+import sys
+
 # Cargar variables desde .env (si existe)
 # .env NO se sube a GitHub (ver .gitignore)
 load_dotenv()
@@ -97,20 +100,23 @@ WSGI_APPLICATION = 'veterinaria.wsgi.application'
 database_url = os.getenv('DATABASE_URL', '').strip()
 
 if database_url:
-    # Django puede parsear directamente una URL de base de datos.
+    db_config = dj_database_url.parse(database_url)
     DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': database_url,
-        }
+        'default': db_config
     }
 else:
     DATABASES = {
         'default': {
             'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.sqlite3'),
-            'NAME': BASE_DIR / os.getenv('DB_NAME', 'db.sqlite3'),
+            'NAME': str(BASE_DIR / os.getenv('DB_NAME', 'db.sqlite3')),
         }
     }
+
+# ✅ Forzar SQLite para los tests (independiente de Supabase/Postgres)
+DATABASES['default']['TEST'] = {
+    'ENGINE': 'django.db.backends.sqlite3',
+    'NAME': str(BASE_DIR / 'test_db.sqlite3'),
+}
 
 
 # -------------------------------------------------------------------
@@ -207,3 +213,12 @@ LOGGING = {
         'level': 'INFO',
     },
 }
+
+# -------------------------------------------------------------------
+# Forzar SQLite en pruebas (independiente de Supabase/Postgres)
+# -------------------------------------------------------------------
+if 'test' in sys.argv:
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': str(BASE_DIR / 'test_db.sqlite3'),
+    }
