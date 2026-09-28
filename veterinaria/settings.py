@@ -10,6 +10,8 @@ https://docs.djangoproject.com/en/4.2/topics/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 from django.contrib.messages import constants as message_constants
 from dotenv import load_dotenv
 

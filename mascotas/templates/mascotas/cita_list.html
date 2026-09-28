@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}Citas - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Citas programadas</h1>
+    {% if perms.mascotas.add_cita %}
+        <a href="{% url 'mascotas:crear_cita' %}" class="btn btn-success">+ Nueva cita</a>
+    {% endif %}
+</div>
+
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    {% endfor %}
+{% endif %}
+
+{% if citas %}
+    <div class="table-responsive">
+        <table class="table table-bordered align-middle bg-white">
+            <thead class="table-dark">
+                <tr>
+                    <th>Mascota</th>
+                    <th>Veterinario</th>
+                    <th>Fecha</th>
+                    <th>Hora</th>
+                    <th>Motivo</th>
+                    <th>Estado</th>
+                    {% if perms.mascotas.change_cita or perms.mascotas.delete_cita %}
+                        <th>Acciones</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for cita in citas %}
+                    <tr>
+                        <td>{{ cita.mascota.nombre }}</td>
+                        <td>{{ cita.veterinario }}</td>
+                        <td>{{ cita.fecha|date:"d/m/Y" }}</td>
+                        <td>{{ cita.hora|time:"H:i" }}</td>
+                        <td>{{ cita.motivo|default:"—" }}</td>
+                        <td>
+                            {% if cita.estado == 'programada' %}
+                                <span class="badge bg-info">Programada</span>
+                            {% elif cita.estado == 'en_curso' %}
+                                <span class="badge bg-primary">En curso</span>
+                            {% elif cita.estado == 'finalizada' %}
+                                <span class="badge bg-success">Finalizada</span>
+                            {% elif cita.estado == 'cancelada' %}
+                                <span class="badge bg-danger">Cancelada</span>
+                            {% endif %}
+                        </td>
+                        {% if perms.mascotas.change_cita or perms.mascotas.delete_cita %}
+                            <td class="text-nowrap">
+                                {% if perms.mascotas.change_cita %}
+                                    <a href="{% url 'mascotas:editar_cita' cita.pk %}" class="btn btn-sm btn-outline-primary">Editar</a>
+                                {% endif %}
+                                {% if perms.mascotas.delete_cita %}
+                                    <a href="{% url 'mascotas:eliminar_cita' cita.pk %}" class="btn btn-sm btn-outline-danger">Eliminar</a>
+                                {% endif %}
+                            </td>
+                        {% endif %}
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">No hay citas registradas.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="alert alert-info">No hay citas registradas.</div>
+{% endif %}
+{% endblock %}

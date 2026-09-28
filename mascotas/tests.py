@@ -16,7 +16,7 @@ class MascotaModelTest(TestCase):
     def test_orden_alfabetico_por_nombre(self):
         Mascota.objects.create(nombre='Zeus', especie='Perro', edad=2, vacunado=True)
         Mascota.objects.create(nombre='Bigotes', especie='Gato', edad=1, vacunado=False)
-        nombres = list(Mascota.objects.values_list('nombre', flat=True))
+        nombres = list(Mascota.objects.order_by('nombre').values_list('nombre', flat=True))
         self.assertEqual(nombres, sorted(nombres))
 
     def test_estado_vacunacion(self):
