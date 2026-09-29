@@ -10,6 +10,15 @@ class MascotaAdmin(admin.ModelAdmin):
     search_fields = ('nombre',)
     ordering = ('nombre',)
 
+    def get_queryset(self, request):
+        """Filtrar por dueño: solo superusuario ve todas, los demás solo sus mascotas."""
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        if hasattr(request.user, 'duenos'):
+            return qs.filter(dueno__user=request.user)
+        return qs.none()
+
 
 @admin.register(Cita)
 class CitaAdmin(admin.ModelAdmin):
@@ -18,6 +27,15 @@ class CitaAdmin(admin.ModelAdmin):
     search_fields = ('mascota__nombre', 'veterinario')
     ordering = ('-fecha', '-hora')
     date_hierarchy = 'fecha'
+
+    def get_queryset(self, request):
+        """Filtrar por dueño: solo superusuario ve todas, los demás solo sus citas."""
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        if hasattr(request.user, 'duenos'):
+            return qs.filter(mascota__dueno__user=request.user)
+        return qs.none()
 
 
 @admin.register(HistorialMedico)
@@ -28,6 +46,15 @@ class HistorialMedicoAdmin(admin.ModelAdmin):
     ordering = ('-fecha',)
     date_hierarchy = 'fecha'
 
+    def get_queryset(self, request):
+        """Filtrar por dueño: solo superusuario ve todas, los demás solo su historial."""
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        if hasattr(request.user, 'duenos'):
+            return qs.filter(mascota__dueno__user=request.user)
+        return qs.none()
+
 
 @admin.register(Vacuna)
 class VacunaAdmin(admin.ModelAdmin):
@@ -36,3 +63,12 @@ class VacunaAdmin(admin.ModelAdmin):
     search_fields = ('mascota__nombre', 'lote', 'fabricante')
     ordering = ('-fecha_aplicacion',)
     date_hierarchy = 'fecha_aplicacion'
+
+    def get_queryset(self, request):
+        """Filtrar por dueño: solo superusuario ve todas, los demás solo sus vacunas."""
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        if hasattr(request.user, 'duenos'):
+            return qs.filter(mascota__dueno__user=request.user)
+        return qs.none()
