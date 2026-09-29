@@ -28,9 +28,12 @@
                         Hola, {{ user.get_username }}
                         {% if perms.mascotas.add_mascota %}
                             <span class="badge bg-primary ms-1">Administrador</span>
-                        {% else %}
+                        {% elif perms.mascotas.view_mascota %}
                             <span class="badge bg-secondary ms-1">Veterinario</span>
+                        {% else %}
+                            <span class="badge bg-light text-dark ms-1">Sin rol asignado</span>
                         {% endif %}
+
                     </span>
 
                    <!-- 🔹 Botón visible solo para superusuarios -->

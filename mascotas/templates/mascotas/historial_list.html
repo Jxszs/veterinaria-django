@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}Historial Médico - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Historial médico</h1>
+    {% if perms.mascotas.add_historialmedico %}
+        <a href="{% url 'mascotas:crear_historial' %}" class="btn btn-success">+ Nuevo registro</a>
+    {% endif %}
+</div>
+
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }}">
+            {{ message }}
+        </div>
+    {% endfor %}
+{% endif %}
+
+{% if historial %}
+    <div class="table-responsive">
+        <table class="table table-bordered align-middle bg-white">
+            <thead class="table-dark">
+                <tr>
+                    <th>Mascota</th>
+                    <th>Fecha</th>
+                    <th>Diagnóstico</th>
+                    <th>Tratamiento</th>
+                    <th>Veterinario</th>
+                    {% if perms.mascotas.change_historialmedico or perms.mascotas.delete_historialmedico %}
+                        <th>Acciones</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for registro in historial %}
+                    <tr>
+                        <td>{{ registro.mascota.nombre }}</td>
+                        <td>{{ registro.fecha|date:"d/m/Y" }}</td>
+                        <td>{{ registro.diagnostico|default:"—" }}</td>
+                        <td>{{ registro.tratamiento|default:"—"|truncatewords:10 }}</td>
+                        <td>{{ registro.veterinario }}</td>
+                        {% if perms.mascotas.change_historialmedico or perms.mascotas.delete_historialmedico %}
+                            <td class="text-nowrap">
+                                {% if perms.mascotas.change_historialmedico %}
+                                    <a href="#" class="btn btn-sm btn-outline-primary">Editar</a>
+                                {% endif %}
+                                {% if perms.mascotas.delete_historialmedico %}
+                                    <a href="#" class="btn btn-sm btn-outline-danger">Eliminar</a>
+                                {% endif %}
+                            </td>
+                        {% endif %}
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">No hay registros en el historial.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="alert alert-info">No hay registros en el historial médico.</div>
+{% endif %}
+{% endblock %}
