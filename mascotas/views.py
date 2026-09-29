@@ -123,6 +123,7 @@ def eliminar_mascota(request, pk):
         return redirect('mascotas:lista')
     return render(request, 'mascotas/mascota_confirm_delete.html', {'object': mascota})
 
+
 # ────────────────────────────────────────────────────────────────────────────────
 # Vistas para Cita
 # ────────────────────────────────────────────────────────────────────────────────
@@ -130,7 +131,10 @@ def eliminar_mascota(request, pk):
 @login_required
 @permission_required('mascotas.view_cita', raise_exception=True)
 def listar_citas(request):
-    """Lista todas las citas programadas."""
+    """
+    Lista todas las citas programadas.
+    Solo el superusuario ve todas; los demás ven solo las de sus mascotas.
+    """
     query = request.GET.get('q', '').strip()[:100]
     estado = request.GET.get('estado', '').strip()
 
@@ -141,7 +145,14 @@ def listar_citas(request):
     }
 
     try:
-        citas = Cita.objects.select_related('mascota').all()
+        if request.user.is_superuser:
+            citas = Cita.objects.select_related('mascota').all()
+        else:
+            # Object-level permission: solo ver citas de sus propias mascotas
+            citas = Cita.objects.select_related('mascota').filter(
+                mascota__dueno__user=request.user
+            )
+
         if query:
             citas = citas.filter(mascota__nombre__icontains=query)
         if estado:
@@ -223,7 +234,10 @@ def eliminar_cita(request, pk):
 @login_required
 @permission_required('mascotas.view_historialmedico', raise_exception=True)
 def listar_historial(request):
-    """Lista el historial médico de todas las mascotas."""
+    """
+    Lista el historial médico de todas las mascotas.
+    Solo el superusuario ve todas; los demás ven solo el de sus mascotas.
+    """
     query = request.GET.get('q', '').strip()[:100]
     mascota_id = request.GET.get('mascota', '').strip()
 
@@ -234,7 +248,14 @@ def listar_historial(request):
     }
 
     try:
-        historial = HistorialMedico.objects.select_related('mascota').all()
+        if request.user.is_superuser:
+            historial = HistorialMedico.objects.select_related('mascota').all()
+        else:
+            # Object-level permission: solo ver historial de sus propias mascotas
+            historial = HistorialMedico.objects.select_related('mascota').filter(
+                mascota__dueno__user=request.user
+            )
+
         if query:
             historial = historial.filter(mascota__nombre__icontains=query)
         if mascota_id:
@@ -276,7 +297,10 @@ def crear_historial(request):
 @login_required
 @permission_required('mascotas.view_vacuna', raise_exception=True)
 def listar_vacunas(request):
-    """Lista todas las vacunas registradas."""
+    """
+    Lista todas las vacunas registradas.
+    Solo el superusuario ve todas; los demás ven solo las de sus mascotas.
+    """
     query = request.GET.get('q', '').strip()[:100]
     tipo = request.GET.get('tipo', '').strip()
 
@@ -287,7 +311,14 @@ def listar_vacunas(request):
     }
 
     try:
-        vacunas = Vacuna.objects.select_related('mascota').all()
+        if request.user.is_superuser:
+            vacunas = Vacuna.objects.select_related('mascota').all()
+        else:
+            # Object-level permission: solo ver vacunas de sus propias mascotas
+            vacunas = Vacuna.objects.select_related('mascota').filter(
+                mascota__dueno__user=request.user
+            )
+
         if query:
             vacunas = vacunas.filter(mascota__nombre__icontains=query)
         if tipo:

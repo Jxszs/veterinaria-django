@@ -48,6 +48,9 @@ class Dueño(models.Model):
     class Meta:
         ordering = ['nombre']
         verbose_name_plural = 'Dueños'
+        permissions = [
+            ("view_own_mascotas", "Puede ver solo sus propias mascotas"),
+        ]
 
 
 class Mascota(models.Model):
@@ -105,6 +108,15 @@ class Mascota(models.Model):
             return 'al_dia'
         return 'pendiente'
 
+    class Meta:
+        ordering = ['nombre']
+        verbose_name_plural = 'Mascotas'
+        permissions = [
+            ("view_historial_medico", "Puede ver el historial médico completo"),
+            ("manage_vacunas", "Puede gestionar vacunas de cualquier mascota"),
+            ("view_own_mascotas", "Puede ver solo sus propias mascotas"),
+        ]
+
 
 class Cita(models.Model):
     """
@@ -152,6 +164,9 @@ class Cita(models.Model):
     class Meta:
         ordering = ['fecha', 'hora']
         verbose_name_plural = 'Citas'
+        permissions = [
+            ("view_own_citas", "Puede ver solo sus propias citas"),
+        ]
 
 
 class HistorialMedico(models.Model):
@@ -189,6 +204,9 @@ class HistorialMedico(models.Model):
     class Meta:
         ordering = ['-fecha']
         verbose_name_plural = 'Históricos médicos'
+        permissions = [
+            ("view_own_historial", "Puede ver solo su propio historial"),
+        ]
 
 
 class Vacuna(models.Model):
@@ -247,3 +265,6 @@ class Vacuna(models.Model):
     class Meta:
         ordering = ['-fecha_aplicacion']
         verbose_name_plural = 'Vacunas'
+        permissions = [
+            ("view_own_vacunas", "Puede ver solo sus propias vacunas"),
+        ]
