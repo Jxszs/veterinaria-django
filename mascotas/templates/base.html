@@ -58,10 +58,12 @@
                {% if user.is_authenticated %}
                     <span class="text-light me-3">
                         Hola, {{ user.get_username }}
-                        {% if perms.mascotas.add_mascota %}
+                        {% if rol_usuario == 'Administrador' %}
                             <span class="badge bg-primary ms-1">Administrador</span>
-                        {% elif perms.mascotas.view_mascota %}
+                        {% elif rol_usuario == 'Veterinario' %}
                             <span class="badge bg-secondary ms-1">Veterinario</span>
+                        {% elif rol_usuario == 'Cliente' %}
+                            <span class="badge bg-info text-dark ms-1">Cliente</span>
                         {% else %}
                             <span class="badge bg-light text-dark ms-1">Sin rol asignado</span>
                         {% endif %}

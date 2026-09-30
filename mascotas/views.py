@@ -31,7 +31,7 @@ ERROR_BD = 'No se pudo conectar con la base de datos. Intenta nuevamente en unos
 @login_required
 def listar_mascotas(request):
     """
-    Vista principal: muestra TODAS las mascotas de la clínica.
+    Vista principal: el personal ve todas las mascotas; un cliente solo las suyas (GA2).
     """
     query = request.GET.get('q', '').strip()[:100]
     especie = request.GET.get('especie', '').strip()[:50]
@@ -47,7 +47,10 @@ def listar_mascotas(request):
     }
 
     try:
-        mascotas = Mascota.objects.all()
+        visibles = filtrar_por_dueno(
+            Mascota.objects.select_related('dueno'), request.user, ruta='dueno__user'
+        )
+        mascotas = visibles
 
         if query:
             mascotas = mascotas.filter(nombre__icontains=query)
@@ -64,9 +67,9 @@ def listar_mascotas(request):
 
         contexto['mascotas'] = list(mascotas)
         contexto['especies'] = list(
-            Mascota.objects.order_by('especie').values_list('especie', flat=True).distinct()
+            visibles.order_by('especie').values_list('especie', flat=True).distinct()
         )
-        contexto['total_pendientes'] = Mascota.objects.filter(
+        contexto['total_pendientes'] = visibles.filter(
             vacunado=False, alergico=False
         ).count()
     except DatabaseError:
@@ -102,7 +105,9 @@ def crear_mascota(request):
 @permission_required('mascotas.change_mascota', raise_exception=True)
 def editar_mascota(request, pk):
     """Edición de una mascota existente (ej: marcarla como vacunada). Solo Administradores."""
-    mascota = get_object_or_404(Mascota, pk=pk)
+    mascota = get_object_or_404(
+        filtrar_por_dueno(Mascota.objects.all(), request.user, ruta='dueno__user'), pk=pk
+    )
     if request.method == 'POST':
         form = MascotaForm(request.POST, instance=mascota)
         if form.is_valid():
@@ -125,7 +130,9 @@ def editar_mascota(request, pk):
 @permission_required('mascotas.delete_mascota', raise_exception=True)
 def eliminar_mascota(request, pk):
     """Eliminación de una mascota, con confirmación previa. Solo Administradores."""
-    mascota = get_object_or_404(Mascota, pk=pk)
+    mascota = get_object_or_404(
+        filtrar_por_dueno(Mascota.objects.all(), request.user, ruta='dueno__user'), pk=pk
+    )
     if request.method == 'POST':
         nombre = mascota.nombre
         try:

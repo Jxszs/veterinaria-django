@@ -1,43 +1,54 @@
 from django.contrib.auth.models import Group, Permission
-from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import BaseCommand
 
-from mascotas.models import Mascota
+# Permisos por grupo (GA2). Formato: 'accion_modelo' de la app mascotas.
+# Los modelos se nombran en minúscula (dueño incluye la ñ).
+CRUD = ('view', 'add', 'change', 'delete')
+MODELOS = ('mascota', 'dueño', 'cita', 'historialmedico', 'vacuna', 'factura', 'detallefactura')
+
+GRUPOS = {
+    # Control total de la clínica.
+    'Administradores': [f'{a}_{m}' for m in MODELOS for a in CRUD] + ['manage_vacunas'],
+    # Atención clínica: ven todo y gestionan citas, vacunas e historial.
+    'Veterinarios': (
+        ['view_mascota', 'view_dueño']
+        + [f'{a}_{m}' for m in ('cita', 'historialmedico', 'vacuna') for a in ('view', 'add', 'change')]
+        + ['manage_vacunas']
+    ),
+    # Dueños de mascotas: solo lectura y, por la regla de permisos.py, solo lo suyo.
+    'Clientes': ['view_mascota', 'view_cita', 'view_vacuna', 'view_historialmedico', 'view_factura'],
+}
 
 
 class Command(BaseCommand):
     """
-    Crea los grupos de permisos de la clínica:
+    Crea (o actualiza) los grupos de la clínica con sus permisos:
 
-    - "Veterinarios": solo pueden VER la lista de mascotas.
-    - "Administradores": pueden ver, crear, editar y eliminar mascotas.
+    - "Administradores": ver, crear, editar y eliminar todo.
+    - "Veterinarios": ven todo; gestionan citas, historial médico y vacunas.
+    - "Clientes": solo ven sus propias mascotas, citas, vacunas, historial y facturas.
 
     Uso:
         python manage.py setup_grupos
+
+    Se puede ejecutar varias veces: deja los permisos siempre como están aquí.
     """
-    help = 'Crea los grupos "Veterinarios" (solo lectura) y "Administradores" (control total) sobre Mascota.'
+    help = 'Crea los grupos Administradores, Veterinarios y Clientes con sus permisos.'
 
     def handle(self, *args, **options):
-        content_type = ContentType.objects.get_for_model(Mascota)
-        permisos = {
-            codename: Permission.objects.get(content_type=content_type, codename=codename)
-            for codename in ('view_mascota', 'add_mascota', 'change_mascota', 'delete_mascota')
-        }
+        for nombre, codenames in GRUPOS.items():
+            permisos = Permission.objects.filter(
+                content_type__app_label='mascotas', codename__in=codenames
+            )
+            faltantes = set(codenames) - set(permisos.values_list('codename', flat=True))
+            if faltantes:
+                self.stdout.write(self.style.WARNING(
+                    f'{nombre}: faltan permisos {sorted(faltantes)}. ¿Corriste "python manage.py migrate"?'
+                ))
+            grupo, _ = Group.objects.get_or_create(name=nombre)
+            grupo.permissions.set(permisos)
+            self.stdout.write(self.style.SUCCESS(f'Grupo "{nombre}" listo con {permisos.count()} permisos.'))
 
-        veterinarios, creado_vet = Group.objects.get_or_create(name='Veterinarios')
-        veterinarios.permissions.set([permisos['view_mascota']])
-
-        administradores, creado_admin = Group.objects.get_or_create(name='Administradores')
-        administradores.permissions.set([
-            permisos['view_mascota'],
-            permisos['add_mascota'],
-            permisos['change_mascota'],
-            permisos['delete_mascota'],
-        ])
-
-        self.stdout.write(self.style.SUCCESS(
-            'Grupos listos: "Veterinarios" (solo ver) y "Administradores" (ver, crear, editar, eliminar).'
-        ))
         self.stdout.write(
             'Asigna usuarios a estos grupos desde /admin/ -> Usuarios -> (elige usuario) -> Grupos.'
         )

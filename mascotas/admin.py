@@ -2,27 +2,26 @@ from django.contrib import admin
 from django.contrib.admin.actions import delete_selected
 
 from .templatetags.veterinaria_extras import formato_clp
-from .models import Cita, DetalleFactura, Factura, HistorialMedico, Mascota, Vacuna
+from .models import Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Vacuna
+from .permisos import filtrar_por_dueno
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Filtrado por dueño (G2): superusuario ve todo, los demás solo lo suyo
+# Filtrado por dueño (GA2): misma regla que la web (mascotas/permisos.py)
 # ────────────────────────────────────────────────────────────────────────────────
 
 class FiltradoPorDuenoMixin:
     """
-    Reutiliza el mismo filtro de la rama G2 en todos los admin.
+    Aplica en el admin la misma regla de la interfaz web: el personal ve todo
+    y un cliente con acceso al admin ve solo lo suyo.
+    Antes se usaba hasattr(user, 'duenos'), que siempre es True, y dejaba a los
+    veterinarios sin ver ningún registro.
     `ruta_dueno` indica cómo llegar desde el modelo al User del dueño.
     """
     ruta_dueno = 'mascota__dueno__user'
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        if request.user.is_superuser:
-            return qs
-        if hasattr(request.user, 'duenos'):
-            return qs.filter(**{self.ruta_dueno: request.user})
-        return qs.none()
+        return filtrar_por_dueno(super().get_queryset(request), request.user, ruta=self.ruta_dueno)
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -211,7 +210,10 @@ class VacunaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
         }),
     )
 
-    readonly_fields = ('fecha_aplicacion',)
+    def get_readonly_fields(self, request, obj=None):
+        # La fecha de aplicación se fija al crear; después no se modifica.
+        # (Antes era readonly siempre y no dejaba crear vacunas desde el admin.)
+        return ('fecha_aplicacion',) if obj else ()
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -238,4 +240,30 @@ class FacturaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
     @admin.display(description='Total')
     def total_clp(self, obj):
         return formato_clp(obj.total)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Admin de Dueño (GA2) — no estaba registrado
+# ────────────────────────────────────────────────────────────────────────────────
+
+class MascotaDelDuenoInline(admin.TabularInline):
+    model = Mascota
+    fields = ('nombre', 'especie', 'raza', 'edad', 'vacunado', 'alergico')
+    extra = 0
+    show_change_link = True
+
+
+@admin.register(Dueño)
+class DuenoAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
+    ruta_dueno = 'user'
+    list_display = ('nombre', 'user', 'email', 'telefono', 'whatsapp', 'cantidad_mascotas')
+    search_fields = ('nombre', 'email', 'telefono', 'user__username')
+    list_filter = ('user__is_active',)
+    ordering = ('nombre',)
+    inlines = [MascotaDelDuenoInline]
+    list_select_related = ('user',)
+
+    @admin.display(description='Mascotas')
+    def cantidad_mascotas(self, obj):
+        return obj.mascotas.count()
 
