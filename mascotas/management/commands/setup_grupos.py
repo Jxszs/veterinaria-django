@@ -4,19 +4,26 @@ from django.core.management.base import BaseCommand
 # Permisos por grupo (GA2). Formato: 'accion_modelo' de la app mascotas.
 # Los modelos se nombran en minúscula (dueño incluye la ñ).
 CRUD = ('view', 'add', 'change', 'delete')
-MODELOS = ('mascota', 'dueño', 'cita', 'historialmedico', 'vacuna', 'factura', 'detallefactura', 'producto')
+MODELOS = (
+    'mascota', 'dueño', 'cita', 'historialmedico', 'vacuna', 'receta',
+    'factura', 'detallefactura', 'producto',
+)
 
 GRUPOS = {
     # Control total de la clínica.
     'Administradores': [f'{a}_{m}' for m in MODELOS for a in CRUD] + ['manage_vacunas'],
-    # Atención clínica: ven todo y gestionan citas, vacunas e historial.
+    # Atención clínica: ven todo y gestionan citas, vacunas, historial y recetas.
     'Veterinarios': (
         ['view_mascota', 'view_dueño', 'view_producto', 'change_producto']
-        + [f'{a}_{m}' for m in ('cita', 'historialmedico', 'vacuna') for a in ('view', 'add', 'change')]
+        + [f'{a}_{m}' for m in ('cita', 'historialmedico', 'vacuna', 'receta')
+           for a in ('view', 'add', 'change')]
         + ['manage_vacunas']
     ),
     # Dueños de mascotas: solo lectura y, por la regla de permisos.py, solo lo suyo.
-    'Clientes': ['view_mascota', 'view_cita', 'view_vacuna', 'view_historialmedico', 'view_factura'],
+    'Clientes': [
+        'view_mascota', 'view_cita', 'view_vacuna', 'view_historialmedico',
+        'view_receta', 'view_factura',
+    ],
 }
 
 

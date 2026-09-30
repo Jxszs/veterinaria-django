@@ -1,85 +1,65 @@
-import datetime
-
-from django.conf import settings
-from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
-from django.utils import timezone
 
-from mascotas.models import Cita, Vacuna
+from mascotas.alertas import enviar_recordatorios_citas, enviar_recordatorios_recetas
+from mascotas.models import HORAS_AVISO_CITA
 
 
 class Command(BaseCommand):
     """
-    Envía recordatorios por correo a los dueños:
-    - Dosis de vacuna que vencen dentro de los próximos N días (por defecto 7).
-    - Citas programadas para mañana.
+    Envía a los dueños los dos avisos automáticos que pide el enunciado,
+    aparte del de vacunas (que envía `enviar_alertas_vacunas`):
 
-    Solo se envía a dueños que tengan correo registrado.
-    Si no hay SMTP configurado en .env, los correos se muestran en la consola.
+      - cita que es en las próximas 24 horas,
+      - receta indicada que ya está lista para retirar.
+
+    Antes este comando avisaba solo de las citas del día siguiente y usaba un
+    `Vacuna.objects.por_vencer()` que ya no existe, así que fallaba con
+    AttributeError. Ahora las tres alertas comparten la lógica de
+    `mascotas/alertas.py`, que es la misma que usan las vistas y los tests.
+
+    Solo se avisa a dueños con correo registrado. Sin `EMAIL_HOST_PASSWORD`
+    en .env los correos se muestran en la consola.
 
     Uso:
-        python manage.py enviar_recordatorios
-        python manage.py enviar_recordatorios --dias 15
-        python manage.py enviar_recordatorios --simular   (no envía, solo muestra)
+        python manage.py enviar_recordatorios                    # envía los correos
+        python manage.py enviar_recordatorios --simular          # solo informa cuántos saldrían
+        python manage.py enviar_recordatorios --horas 48         # avisa 48 horas antes
+        python manage.py enviar_recordatorios --solo citas       # solo el aviso de citas
+        python manage.py enviar_recordatorios --solo recetas     # solo el aviso de recetas
     """
-    help = 'Envía recordatorios de vacunas por vencer y citas de mañana a los dueños.'
+    help = 'Envía recordatorios de cita próxima y avisos de receta lista.'
 
     def add_arguments(self, parser):
-        parser.add_argument('--dias', type=int, default=7,
-                            help='Días de anticipación para avisar dosis por vencer (por defecto 7).')
+        parser.add_argument('--horas', type=int, default=HORAS_AVISO_CITA,
+                            help=f'Horas de anticipación de la cita (por defecto {HORAS_AVISO_CITA}).')
         parser.add_argument('--simular', action='store_true',
-                            help='Muestra qué se enviaría, sin enviar correos.')
+                            help='No envía nada, solo informa cuántos correos saldrían.')
+        parser.add_argument('--solo', choices=('citas', 'recetas'), default=None,
+                            help='Envía solo el aviso indicado y deja el otro fuera.')
 
     def handle(self, *args, **options):
-        hoy = timezone.localdate()
-        manana = hoy + datetime.timedelta(days=1)
         simular = options['simular']
-
-        vacunas = (
-            Vacuna.objects.por_vencer(dias=options['dias'], hoy=hoy)
-            .filter(mascota__dueno__email__isnull=False)
-            .exclude(mascota__dueno__email='')
-            .select_related('mascota', 'mascota__dueno')
-        )
-        citas = (
-            Cita.objects.filter(fecha=manana, estado='programada')
-            .filter(mascota__dueno__email__isnull=False)
-            .exclude(mascota__dueno__email='')
-            .select_related('mascota', 'mascota__dueno')
-        )
-
-        enviados = 0
-        for vacuna in vacunas:
-            dueno = vacuna.mascota.dueno
-            asunto = f'Recordatorio: vacuna de {vacuna.mascota.nombre}'
-            mensaje = (
-                f'Hola {dueno.nombre},\n\n'
-                f'Te recordamos que la próxima dosis de {vacuna.get_tipo_display()} '
-                f'de {vacuna.mascota.nombre} corresponde el {vacuna.proxima_dosis:%d/%m/%Y}.\n'
-                'Agenda una hora con nosotros.\n\nClínica Veterinaria'
-            )
-            enviados += self._enviar(dueno.email, asunto, mensaje, simular)
-
-        for cita in citas:
-            dueno = cita.mascota.dueno
-            asunto = f'Recordatorio: cita de {cita.mascota.nombre} mañana'
-            mensaje = (
-                f'Hola {dueno.nombre},\n\n'
-                f'{cita.mascota.nombre} tiene una cita mañana {cita.fecha:%d/%m/%Y} '
-                f'a las {cita.hora:%H:%M} con {cita.veterinario}.\n\nClínica Veterinaria'
-            )
-            enviados += self._enviar(dueno.email, asunto, mensaje, simular)
-
         verbo = 'se enviarían' if simular else 'enviados'
-        self.stdout.write(self.style.SUCCESS(f'Recordatorios {verbo}: {enviados}'))
+        solo = options['solo']
 
-    def _enviar(self, correo, asunto, mensaje, simular):
-        if simular:
-            self.stdout.write(f'[simulación] Para {correo}: {asunto}')
-            return 1
-        try:
-            send_mail(asunto, mensaje, settings.DEFAULT_FROM_EMAIL, [correo])
-        except Exception as error:  # SMTP caído, credenciales malas, etc.
-            self.stderr.write(f'No se pudo enviar a {correo}: {error}')
-            return 0
-        return 1
+        if solo in (None, 'citas'):
+            self._informe('Recordatorios de cita',
+                          enviar_recordatorios_citas(horas=options['horas'], simular=simular),
+                          verbo)
+
+        if solo in (None, 'recetas'):
+            self._informe('Avisos de receta',
+                          enviar_recordatorios_recetas(simular=simular),
+                          verbo)
+
+    def _informe(self, titulo, resumen, verbo):
+        self.stdout.write(self.style.SUCCESS(f'{titulo} {verbo}: {resumen["enviados"]}'))
+        if resumen['ya_avisados']:
+            self.stdout.write(f'Ya avisados antes: {resumen["ya_avisados"]}')
+        if resumen['sin_correo']:
+            self.stdout.write(f'Dueños sin correo: {resumen["sin_correo"]}')
+        if resumen['errores']:
+            self.stdout.write(self.style.ERROR(
+                f'Errores de envío: {resumen["errores"]} '
+                '(revisa EMAIL_HOST_PASSWORD en .env)'
+            ))
