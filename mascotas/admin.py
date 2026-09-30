@@ -1,8 +1,9 @@
 from django.contrib import admin
+from django.utils.html import format_html
 from django.contrib.admin.actions import delete_selected
 
 from .templatetags.veterinaria_extras import formato_clp
-from .models import Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Vacuna
+from .models import Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Producto, Vacuna
 from .permisos import filtrar_por_dueno
 
 
@@ -266,4 +267,58 @@ class DuenoAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
     @admin.display(description='Mascotas')
     def cantidad_mascotas(self, obj):
         return obj.mascotas.count()
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Admin de Producto (GA3) — inventario con semáforo
+# ────────────────────────────────────────────────────────────────────────────────
+
+class SemaforoFilter(admin.SimpleListFilter):
+    """Filtro lateral por color del semáforo (es una propiedad, no un campo)."""
+    title = 'semáforo'
+    parameter_name = 'semaforo'
+
+    def lookups(self, request, model_admin):
+        return [('rojo', '🔴 Rojo'), ('amarillo', '🟡 Amarillo'), ('verde', '🟢 Verde')]
+
+    def queryset(self, request, queryset):
+        if self.value() in ('rojo', 'amarillo', 'verde'):
+            ids = [p.pk for p in queryset if p.semaforo == self.value()]
+            return queryset.filter(pk__in=ids)
+        return queryset
+
+
+@admin.action(description='Desactivar productos seleccionados')
+def desactivar_productos(modeladmin, request, queryset):
+    total = queryset.update(activo=False)
+    modeladmin.message_user(request, f'{total} producto(s) desactivado(s).')
+
+
+@admin.register(Producto)
+class ProductoAdmin(admin.ModelAdmin):
+    list_display = ('semaforo_color', 'nombre', 'categoria', 'stock', 'stock_minimo', 'unidad',
+                    'precio_clp', 'fecha_vencimiento', 'activo')
+    list_display_links = ('nombre',)
+    list_editable = ('stock',)
+    list_filter = (SemaforoFilter, 'categoria', 'activo')
+    search_fields = ('nombre',)
+    ordering = ('nombre',)
+    actions = [desactivar_productos, delete_selected]
+    fieldsets = (
+        ('Producto', {'fields': ('nombre', 'categoria', 'unidad', 'activo')}),
+        ('Stock y precio', {'fields': ('stock', 'stock_minimo', 'precio_venta')}),
+        ('Vencimiento', {'fields': ('fecha_vencimiento',)}),
+    )
+
+    @admin.display(description='Semáforo')
+    def semaforo_color(self, obj):
+        colores = {'rojo': '#dc3545', 'amarillo': '#ffc107', 'verde': '#198754'}
+        return format_html(
+            '<span title="{}" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:{}"></span> {}',
+            obj.motivo_semaforo, colores[obj.semaforo], obj.motivo_semaforo,
+        )
+
+    @admin.display(description='Precio', ordering='precio_venta')
+    def precio_clp(self, obj):
+        return formato_clp(obj.precio_venta)
 

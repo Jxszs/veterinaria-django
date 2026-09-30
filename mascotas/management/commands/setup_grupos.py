@@ -4,14 +4,14 @@ from django.core.management.base import BaseCommand
 # Permisos por grupo (GA2). Formato: 'accion_modelo' de la app mascotas.
 # Los modelos se nombran en minúscula (dueño incluye la ñ).
 CRUD = ('view', 'add', 'change', 'delete')
-MODELOS = ('mascota', 'dueño', 'cita', 'historialmedico', 'vacuna', 'factura', 'detallefactura')
+MODELOS = ('mascota', 'dueño', 'cita', 'historialmedico', 'vacuna', 'factura', 'detallefactura', 'producto')
 
 GRUPOS = {
     # Control total de la clínica.
     'Administradores': [f'{a}_{m}' for m in MODELOS for a in CRUD] + ['manage_vacunas'],
     # Atención clínica: ven todo y gestionan citas, vacunas e historial.
     'Veterinarios': (
-        ['view_mascota', 'view_dueño']
+        ['view_mascota', 'view_dueño', 'view_producto', 'change_producto']
         + [f'{a}_{m}' for m in ('cita', 'historialmedico', 'vacuna') for a in ('view', 'add', 'change')]
         + ['manage_vacunas']
     ),

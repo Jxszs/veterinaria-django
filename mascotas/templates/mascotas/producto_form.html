@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}{% if object %}Editar producto{% else %}Nuevo producto{% endif %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-body">
+                <h1 class="h4 mb-3">{% if object %}Editar "{{ object.nombre }}"{% else %}Agregar producto al inventario{% endif %}</h1>
+                <form method="post" novalidate>
+                    {% csrf_token %}
+                    {% include 'mascotas/_campos_form.html' %}
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success">Guardar</button>
+                        <a href="{% url 'mascotas:inventario' %}" class="btn btn-secondary">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -48,6 +48,9 @@
                       {% if perms.mascotas.view_factura %}
                           <li class="nav-item"><a class="nav-link {% if 'factura' in url %}active{% endif %}" href="{% url 'mascotas:lista_facturas' %}">Facturas</a></li>
                       {% endif %}
+                      {% if perms.mascotas.view_producto %}
+                          <li class="nav-item"><a class="nav-link {% if url == 'inventario' or 'producto' in url %}active{% endif %}" href="{% url 'mascotas:inventario' %}">Inventario</a></li>
+                      {% endif %}
                       {% if perms.mascotas.view_dueño %}
                           <li class="nav-item"><a class="nav-link {% if 'dueno' in url %}active{% endif %}" href="{% url 'mascotas:lista_duenos' %}">Dueños</a></li>
                       {% endif %}

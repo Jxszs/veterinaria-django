@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Eliminar producto{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <h3 class="h5 mb-0">⚠️ Confirmar eliminación</h3>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-light border">
+                    <p><strong>Producto:</strong> {{ object.nombre }}</p>
+                    <p><strong>Stock actual:</strong> {{ object.stock }} {{ object.unidad }}</p>
+                    <p class="mb-0 small text-muted">Si solo dejó de usarse, puedes editarlo y desmarcar "Activo" en vez de eliminarlo.</p>
+                </div>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-danger">Eliminar producto</button>
+                        <a href="{% url 'mascotas:inventario' %}" class="btn btn-secondary">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

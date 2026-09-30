@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+{% load veterinaria_extras %}
+{% block title %}Inventario - Clínica Veterinaria{% endblock %}
+
+{% block extra_head %}
+<style>
+    .luz { display: inline-block; width: .9rem; height: .9rem; border-radius: 50%; vertical-align: -2px; }
+    .luz-rojo { background: #dc3545; } .luz-amarillo { background: #ffc107; } .luz-verde { background: #198754; }
+    .fila-rojo { background-color: #f8d7da !important; } .fila-amarillo { background-color: #fff3cd !important; }
+    .ajuste input { width: 5.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Inventario</h1>
+    {% if perms.mascotas.add_producto %}
+        <a href="{% url 'mascotas:crear_producto' %}" class="btn btn-success">+ Nuevo producto</a>
+    {% endif %}
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a href="?semaforo=rojo" class="btn btn-outline-danger {% if semaforo_seleccionado == 'rojo' %}active{% endif %}"><span class="luz luz-rojo"></span> Urgente: {{ conteo.rojo }}</a>
+    <a href="?semaforo=amarillo" class="btn btn-outline-warning text-dark {% if semaforo_seleccionado == 'amarillo' %}active{% endif %}"><span class="luz luz-amarillo"></span> Atención: {{ conteo.amarillo }}</a>
+    <a href="?semaforo=verde" class="btn btn-outline-success {% if semaforo_seleccionado == 'verde' %}active{% endif %}"><span class="luz luz-verde"></span> En orden: {{ conteo.verde }}</a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label mb-1" for="q">Buscar producto</label>
+                <input type="text" id="q" name="q" value="{{ query }}" class="form-control" placeholder="Ej: Amoxicilina">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1" for="categoria">Categoría</label>
+                <select id="categoria" name="categoria" class="form-select">
+                    <option value="">Todas</option>
+                    {% for valor, texto in categorias %}
+                        <option value="{{ valor }}" {% if valor == categoria_seleccionada %}selected{% endif %}>{{ texto }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 form-check ms-2 mb-2">
+                <input class="form-check-input" type="checkbox" name="inactivos" value="1" id="inactivos" {% if ver_inactivos %}checked{% endif %}>
+                <label class="form-check-label" for="inactivos">Ver inactivos</label>
+            </div>
+            <div class="col-md-1 d-grid">
+                <button type="submit" class="btn btn-primary">Filtrar</button>
+            </div>
+        </form>
+        {% if query or categoria_seleccionada or semaforo_seleccionado or ver_inactivos %}
+            <a href="{% url 'mascotas:inventario' %}" class="d-inline-block mt-2 small">Limpiar filtros</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered align-middle bg-white">
+        <thead class="table-dark">
+            <tr>
+                <th>Estado</th><th>Producto</th><th>Categoría</th><th class="text-end">Stock</th>
+                <th>Vencimiento</th><th class="text-end">Precio</th>
+                {% if perms.mascotas.change_producto %}<th>Movimiento</th>{% endif %}
+                {% if perms.mascotas.change_producto or perms.mascotas.delete_producto %}<th>Acciones</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for producto in productos %}
+                <tr class="fila-{{ producto.semaforo }}">
+                    <td class="text-nowrap"><span class="luz luz-{{ producto.semaforo }}"></span> <span class="small">{{ producto.motivo_semaforo }}</span></td>
+                    <td>{{ producto.nombre }}{% if not producto.activo %} <span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                    <td>{{ producto.get_categoria_display }}</td>
+                    <td class="text-end">{{ producto.stock }} <span class="small text-muted">/ mín. {{ producto.stock_minimo }} {{ producto.unidad }}</span></td>
+                    <td>{{ producto.fecha_vencimiento|date:"d/m/Y"|default:"—" }}</td>
+                    <td class="text-end">{{ producto.precio_venta|clp }}</td>
+                    {% if perms.mascotas.change_producto %}
+                        <td>
+                            <form method="post" action="{% url 'mascotas:ajustar_stock' producto.pk %}" class="d-flex gap-1 ajuste">
+                                {% csrf_token %}
+                                <select name="tipo" class="form-select form-select-sm" aria-label="Tipo de movimiento">
+                                    <option value="entrada">+ Entrada</option>
+                                    <option value="salida">− Salida</option>
+                                </select>
+                                <input type="number" name="cantidad" min="1" value="1" class="form-control form-control-sm" aria-label="Cantidad">
+                                <button type="submit" class="btn btn-sm btn-outline-dark">OK</button>
+                            </form>
+                        </td>
+                    {% endif %}
+                    {% if perms.mascotas.change_producto or perms.mascotas.delete_producto %}
+                        <td class="text-nowrap">
+                            {% if perms.mascotas.change_producto %}<a href="{% url 'mascotas:editar_producto' producto.pk %}" class="btn btn-sm btn-outline-primary">Editar</a>{% endif %}
+                            {% if perms.mascotas.delete_producto %}<a href="{% url 'mascotas:eliminar_producto' producto.pk %}" class="btn btn-sm btn-outline-danger">Eliminar</a>{% endif %}
+                        </td>
+                    {% endif %}
+                </tr>
+            {% empty %}
+                <tr><td colspan="8" class="text-center text-muted py-4">No hay productos que coincidan con el filtro.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -438,3 +438,83 @@ class DetalleFactura(models.Model):
     @property
     def subtotal(self):
         return (self.cantidad or 0) * (self.precio_unitario or 0)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Inventario con semáforo (GA3)
+# ────────────────────────────────────────────────────────────────────────────────
+
+# Días antes del vencimiento en que un producto pasa a amarillo.
+DIAS_AVISO_VENCIMIENTO = 30
+
+
+class Producto(models.Model):
+    """
+    Medicamentos, vacunas, alimentos e insumos de la clínica.
+
+    Semáforo de stock:
+      - rojo: sin stock, stock en la mitad del mínimo o menos, o producto vencido.
+      - amarillo: stock igual o bajo el mínimo, o vence dentro de 30 días.
+      - verde: todo en orden.
+    """
+    CATEGORIA_CHOICES = [
+        ('medicamento', 'Medicamento'),
+        ('vacuna', 'Vacuna'),
+        ('alimento', 'Alimento'),
+        ('insumo', 'Insumo clínico'),
+        ('otro', 'Otro'),
+    ]
+
+    nombre = models.CharField(max_length=120, unique=True)
+    categoria = models.CharField(max_length=20, choices=CATEGORIA_CHOICES, default='medicamento', verbose_name='Categoría')
+    stock = models.PositiveIntegerField(default=0, verbose_name='Stock actual')
+    stock_minimo = models.PositiveIntegerField(
+        default=5,
+        validators=[MinValueValidator(1, message='El stock mínimo debe ser al menos 1.')],
+        verbose_name='Stock mínimo',
+        help_text='Bajo esta cantidad el producto pasa a amarillo.',
+    )
+    unidad = models.CharField(max_length=30, default='unidad', help_text='Ej: unidad, caja, frasco, kg.')
+    precio_venta = models.PositiveIntegerField(default=0, verbose_name='Precio de venta neto (CLP)')
+    fecha_vencimiento = models.DateField(blank=True, null=True, verbose_name='Fecha de vencimiento')
+    activo = models.BooleanField(default=True, help_text='Desmarcar si ya no se trabaja con este producto.')
+
+    class Meta:
+        ordering = ['nombre']
+        verbose_name_plural = 'Productos'
+
+    def __str__(self):
+        return f'{self.nombre} ({self.stock} {self.unidad})'
+
+    @property
+    def vencido(self):
+        return bool(self.fecha_vencimiento and self.fecha_vencimiento < timezone.localdate())
+
+    @property
+    def por_vencer(self):
+        if not self.fecha_vencimiento or self.vencido:
+            return False
+        return (self.fecha_vencimiento - timezone.localdate()).days <= DIAS_AVISO_VENCIMIENTO
+
+    @property
+    def semaforo(self):
+        if self.stock == 0 or self.vencido or self.stock * 2 <= self.stock_minimo:
+            return 'rojo'
+        if self.stock <= self.stock_minimo or self.por_vencer:
+            return 'amarillo'
+        return 'verde'
+
+    @property
+    def motivo_semaforo(self):
+        """Explica en palabras por qué el producto tiene ese color."""
+        if self.vencido:
+            return 'Producto vencido'
+        if self.stock == 0:
+            return 'Sin stock'
+        if self.stock * 2 <= self.stock_minimo:
+            return 'Stock crítico'
+        if self.stock <= self.stock_minimo:
+            return 'Stock bajo el mínimo'
+        if self.por_vencer:
+            return f'Vence el {self.fecha_vencimiento:%d/%m/%Y}'
+        return 'Stock suficiente'

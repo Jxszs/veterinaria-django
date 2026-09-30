@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.utils.html import strip_tags
 import re
 
-from .models import Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Vacuna
+from .models import Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Producto, Vacuna
 
 # Solo letras (con tildes y ñ), espacios, guiones y apóstrofes.
 SOLO_LETRAS = re.compile(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]+$")
@@ -534,4 +534,65 @@ DetalleFacturaFormSet = forms.inlineformset_factory(
     Factura, DetalleFactura, form=DetalleFacturaForm,
     extra=3, min_num=1, validate_min=True, can_delete=True,
 )
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Inventario (GA3)
+# ────────────────────────────────────────────────────────────────────────────────
+
+class ProductoForm(forms.ModelForm):
+    class Meta:
+        model = Producto
+        fields = ['nombre', 'categoria', 'stock', 'stock_minimo', 'unidad', 'precio_venta', 'fecha_vencimiento', 'activo']
+        widgets = {
+            'nombre': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: Amoxicilina 250 mg'}),
+            'categoria': forms.Select(attrs={'class': 'form-select'}),
+            'stock': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
+            'stock_minimo': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
+            'unidad': forms.TextInput(attrs={'class': 'form-control'}),
+            'precio_venta': forms.NumberInput(attrs={'class': 'form-control', 'min': 0}),
+            'fecha_vencimiento': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}, format='%Y-%m-%d'),
+            'activo': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+        error_messages = {
+            'nombre': {'required': 'Debes ingresar el nombre del producto.',
+                       'unique': 'Ya existe un producto con ese nombre.'},
+            'stock': {'invalid': 'El stock debe ser un número entero.'},
+            'precio_venta': {'invalid': 'El precio debe ser un número entero.'},
+        }
+
+    def clean_nombre(self):
+        nombre = limpiar_texto(self.cleaned_data.get('nombre'))
+        if len(nombre) < 3:
+            raise forms.ValidationError('El nombre debe tener al menos 3 caracteres.')
+        return nombre
+
+    def clean_unidad(self):
+        unidad = limpiar_texto(self.cleaned_data.get('unidad')).lower()
+        if not unidad:
+            raise forms.ValidationError('Indica la unidad (ej: unidad, caja, frasco).')
+        return unidad
+
+
+class AjusteStockForm(forms.Form):
+    """Entrada (compra) o salida (uso/venta) de unidades de un producto."""
+    TIPO_CHOICES = [('entrada', 'Entrada'), ('salida', 'Salida')]
+    tipo = forms.ChoiceField(choices=TIPO_CHOICES)
+    cantidad = forms.IntegerField(
+        min_value=1, max_value=100000,
+        error_messages={'min_value': 'La cantidad debe ser al menos 1.', 'invalid': 'Cantidad no válida.',
+                        'required': 'Indica la cantidad.'},
+    )
+
+    def __init__(self, *args, producto=None, **kwargs):
+        self.producto = producto
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        datos = super().clean()
+        if datos.get('tipo') == 'salida' and self.producto and datos.get('cantidad', 0) > self.producto.stock:
+            raise forms.ValidationError(
+                f'No hay stock suficiente: quedan {self.producto.stock} {self.producto.unidad}.'
+            )
+        return datos
 
