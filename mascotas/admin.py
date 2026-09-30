@@ -3,7 +3,10 @@ from django.utils.html import format_html
 from django.contrib.admin.actions import delete_selected
 
 from .templatetags.veterinaria_extras import formato_clp
-from .models import Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Producto, Vacuna
+from .models import (
+    Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Producto,
+    Receta, Vacuna,
+)
 from .permisos import filtrar_por_dueno
 
 
@@ -59,6 +62,21 @@ class VacunaInline(admin.TabularInline):
     ordering = ('-fecha_aplicacion',)
 
 
+class RecetaInline(admin.TabularInline):
+    """
+    Recetas indicadas en las citas de una mascota.
+
+    Solo funciona colgado del admin de Cita (la receta cuelga de la cita, no
+    de la mascota), así que aquí solo se declara la clase.
+    """
+    model = Receta
+    extra = 1
+    fields = ('medicamento', 'dosis', 'duracion_dias', 'fecha')
+    ordering = ('-fecha',)
+    verbose_name = 'Receta'
+    verbose_name_plural = 'Recetas'
+
+
 # ────────────────────────────────────────────────────────────────────────────────
 # Acción personalizada: marcar varias mascotas como vacunadas a la vez
 # ────────────────────────────────────────────────────────────────────────────────
@@ -94,31 +112,41 @@ class MascotaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
     ruta_dueno = 'dueno__user'
 
     # ── Listado ──
+    # proxima_vacuna y ultima_cita son las columnas de seguimiento que pide
+    # el enunciado: muestran de un vistazo qué falta por renovar.
     list_display = (
-        'nombre', 'especie', 'edad', 'dueno', 'vacunado',
-        'alergico', 'estado_vacunacion',
+        'nombre', 'especie', 'raza', 'sexo', 'estado', 'dueno', 'edad_calculada',
+        'proxima_vacuna', 'ultima_cita', 'estado_vacunacion',
     )
-    list_filter = ('especie', 'vacunado', 'alergico', 'dueno')
-    search_fields = ('nombre', 'dueno__user__username', 'dueno__nombre')
+    list_filter = ('especie', 'sexo', 'estado', 'vacunado', 'alergico', 'dueno')
+    search_fields = ('nombre', 'raza', 'dueno__user__username', 'dueno__nombre')
     ordering = ('nombre',)
-    date_hierarchy = None  # no aplica para Mascota (no tiene fecha)
 
     # ── Formulario de edición ──
     fieldsets = (
         ('Datos principales', {
-            'fields': ('nombre', 'especie', 'edad', 'raza')
+            'fields': ('nombre', 'especie', 'raza', 'sexo', 'foto')
+        }),
+        ('Edad y peso', {
+            'fields': ('edad', 'fecha_nacimiento', 'peso'),
+            'description': 'Si informas la fecha de nacimiento, la edad se calcula sola.',
         }),
         ('Dueño', {
             'fields': ('dueno',),
             'description': 'Dueño registrado del sistema. Deja vacío para mascotas sin dueño asignado.',
         }),
-        ('Estado de vacunación', {
-            'fields': ('vacunado', 'alergico'),
+        ('Estado', {
+            'fields': ('estado', 'vacunado', 'alergico'),
             'classes': ('collapse',),
-            'description': 'Marcar si la mascota está vacunada o es alérgica a las vacunas.',
+            'description': 'Estado general de la mascota y su situación con las vacunas.',
+        }),
+        ('Seguimiento', {
+            'fields': ('proxima_vacuna', 'ultima_cita'),
+            'classes': ('collapse', 'readonly'),
+            'description': 'Se calculan solos a partir de las vacunas y citas registradas.',
         }),
     )
-    readonly_fields = ('estado_vacunacion',)
+    readonly_fields = ('estado_vacunacion', 'proxima_vacuna', 'ultima_cita', 'edad_calculada')
 
     # ── Relaciones (inlines) ──
     inlines = [CitaInline, HistorialMedicoInline, VacunaInline]
@@ -133,24 +161,27 @@ class MascotaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
 
 @admin.register(Cita)
 class CitaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
-    list_display = ('mascota', 'veterinario', 'fecha', 'hora', 'estado', 'motivo')
+    list_display = ('mascota', 'veterinario', 'fecha', 'hora', 'estado', 'motivo', 'duracion')
     list_filter = ('estado', 'fecha', 'veterinario')
-    search_fields = ('mascota__nombre', 'veterinario')
+    # También lo usa el autocompletado de citas en el admin de Receta.
+    search_fields = ('mascota__nombre', 'veterinario', 'motivo')
     ordering = ('-fecha', '-hora')
     date_hierarchy = 'fecha'
 
     fieldsets = (
         ('Datos de la cita', {
-            'fields': ('mascota', 'veterinario', 'fecha', 'hora'),
+            'fields': ('mascota', 'veterinario', 'fecha', 'hora', 'duracion'),
         }),
         ('Motivo y estado', {
             'fields': ('motivo', 'estado'),
         }),
         ('Observaciones', {
-            'fields': ('observaciones',),
+            'fields': ('observaciones', 'alerta_enviada_el'),
             'classes': ('collapse',),
         }),
     )
+    # Las recetas se indican y editan desde la propia cita.
+    inlines = [RecetaInline]
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -321,4 +352,44 @@ class ProductoAdmin(admin.ModelAdmin):
     @admin.display(description='Precio', ordering='precio_venta')
     def precio_clp(self, obj):
         return formato_clp(obj.precio_venta)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Admin de Receta
+# ────────────────────────────────────────────────────────────────────────────────
+
+@admin.register(Receta)
+class RecetaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
+    ruta_dueno = 'cita__mascota__dueno__user'
+    list_display = ('medicamento', 'cita', 'mascota', 'dosis', 'duracion_dias',
+                    'fecha', 'fecha_fin', 'estado_receta', 'receta_lista_el')
+    list_display_links = ('medicamento',)
+    list_filter = ('fecha', 'medicamento')
+    search_fields = ('medicamento', 'dosis', 'cita__mascota__nombre',
+                     'cita__mascota__dueno__nombre')
+    ordering = ('-fecha', '-id')
+    date_hierarchy = 'fecha'
+    autocomplete_fields = ('cita',)
+    fieldsets = (
+        ('Indicación', {
+            'fields': ('cita', 'medicamento', 'dosis', 'duracion_dias'),
+        }),
+        ('Control', {
+            'fields': ('fecha', 'observaciones', 'receta_lista_el', 'fecha_fin', 'estado_receta'),
+        }),
+    )
+    readonly_fields = ('fecha_fin', 'estado_receta', 'receta_lista_el')
+    actions = [delete_selected]
+
+    @admin.display(description='Mascota', ordering='cita__mascota__nombre')
+    def mascota(self, obj):
+        return obj.cita.mascota.nombre
+
+    @admin.display(description='Termina')
+    def fecha_fin(self, obj):
+        return obj.fecha_fin
+
+    @admin.display(description='Estado', boolean=True)
+    def estado_receta(self, obj):
+        return obj.en_curso
 
