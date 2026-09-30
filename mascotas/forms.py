@@ -1,11 +1,16 @@
 from django import forms
+from django.contrib.auth.models import User
+from django.utils import timezone
 from django.utils.html import strip_tags
 import re
 
-from .models import Mascota, Cita, HistorialMedico, Vacuna
+from .models import Dueño, Mascota, Cita, HistorialMedico, Vacuna
 
 # Solo letras (con tildes y ñ), espacios, guiones y apóstrofes.
 SOLO_LETRAS = re.compile(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]+$")
+
+# Teléfono chileno o internacional: opcional "+" y entre 8 y 15 dígitos.
+TELEFONO = re.compile(r"^\+?\d{8,15}$")
 
 
 def limpiar_texto(valor):
@@ -19,7 +24,7 @@ class MascotaForm(forms.ModelForm):
 
     class Meta:
         model = Mascota
-        fields = ['nombre', 'especie', 'edad', 'vacunado', 'alergico']
+        fields = ['nombre', 'especie', 'raza', 'edad', 'dueno', 'vacunado', 'alergico']
         widgets = {
             'nombre': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -31,11 +36,17 @@ class MascotaForm(forms.ModelForm):
                 'placeholder': 'Ej: Perro, Gato, Conejo, Loro...',
                 'maxlength': 50,
             }),
+            'raza': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ej: Labrador, Siamés (opcional)',
+                'maxlength': 100,
+            }),
             'edad': forms.NumberInput(attrs={
                 'class': 'form-control',
                 'min': 0,
                 'max': 40,
             }),
+            'dueno': forms.Select(attrs={'class': 'form-select'}),
             'vacunado': forms.CheckboxInput(attrs={
                 'class': 'form-check-input',
             }),
@@ -46,7 +57,9 @@ class MascotaForm(forms.ModelForm):
         labels = {
             'nombre': 'Nombre de la mascota',
             'especie': 'Especie',
+            'raza': 'Raza',
             'edad': 'Edad (años)',
+            'dueno': 'Dueño',
             'vacunado': '¿Está vacunado?',
             'alergico': '¿Es alérgico a las vacunas?',
         }
@@ -75,6 +88,90 @@ class MascotaForm(forms.ModelForm):
             raise forms.ValidationError('La especie solo puede contener letras y espacios.')
         # "perro", "PERRO" y "Perro" quedan igual, así el filtro no se duplica.
         return especie.capitalize()
+
+    def clean_raza(self):
+        # La raza es opcional, pero si se escribe debe ser texto válido.
+        raza = limpiar_texto(self.cleaned_data.get('raza'))
+        if not raza:
+            return None
+        if not SOLO_LETRAS.match(raza):
+            raise forms.ValidationError('La raza solo puede contener letras y espacios.')
+        return raza.title()
+
+
+class DuenoForm(forms.ModelForm):
+    """
+    Formulario para registrar dueños y asociarlos a un usuario del sistema.
+    Un usuario solo puede tener un perfil de dueño.
+    """
+
+    class Meta:
+        model = Dueño
+        fields = ['user', 'nombre', 'email', 'telefono', 'whatsapp', 'direccion']
+        widgets = {
+            'user': forms.Select(attrs={'class': 'form-select'}),
+            'nombre': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: María González'}),
+            'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'correo@ejemplo.cl'}),
+            'telefono': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: +56912345678'}),
+            'whatsapp': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: +56912345678'}),
+            'direccion': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Calle, número, comuna'}),
+        }
+        labels = {
+            'user': 'Usuario del sistema',
+            'nombre': 'Nombre completo',
+            'email': 'Correo electrónico',
+            'telefono': 'Teléfono',
+            'whatsapp': 'WhatsApp',
+            'direccion': 'Dirección',
+        }
+        error_messages = {
+            'user': {'required': 'Debes elegir el usuario con el que el dueño inicia sesión.'},
+            'nombre': {'required': 'Debes ingresar el nombre del dueño.'},
+            'email': {'invalid': 'Ingresa un correo válido (ej: nombre@correo.cl).'},
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['user'].queryset = User.objects.order_by('username')
+
+    def clean_user(self):
+        user = self.cleaned_data.get('user')
+        repetido = Dueño.objects.filter(user=user).exclude(pk=self.instance.pk)
+        if user and repetido.exists():
+            raise forms.ValidationError('Este usuario ya tiene un perfil de dueño registrado.')
+        return user
+
+    def clean_nombre(self):
+        nombre = limpiar_texto(self.cleaned_data.get('nombre'))
+        if len(nombre) < 3:
+            raise forms.ValidationError('El nombre debe tener al menos 3 letras.')
+        if not SOLO_LETRAS.match(nombre):
+            raise forms.ValidationError('El nombre solo puede contener letras y espacios.')
+        return nombre.title()
+
+    def _limpiar_telefono(self, campo):
+        valor = limpiar_texto(self.cleaned_data.get(campo)).replace(' ', '').replace('-', '')
+        if not valor:
+            return None
+        if not TELEFONO.match(valor):
+            raise forms.ValidationError('Número no válido. Usa solo dígitos (8 a 15), con "+" opcional.')
+        return valor
+
+    def clean_telefono(self):
+        return self._limpiar_telefono('telefono')
+
+    def clean_whatsapp(self):
+        return self._limpiar_telefono('whatsapp')
+
+    def clean_direccion(self):
+        return limpiar_texto(self.cleaned_data.get('direccion')) or None
+
+    def clean(self):
+        datos = super().clean()
+        # Sin al menos un medio de contacto, la clínica no puede avisar de vacunas ni citas.
+        if not (datos.get('email') or datos.get('telefono') or datos.get('whatsapp')):
+            raise forms.ValidationError('Ingresa al menos un medio de contacto: correo, teléfono o WhatsApp.')
+        return datos
 
 
 class CitaForm(forms.ModelForm):
@@ -152,6 +249,29 @@ class HistorialMedicoForm(forms.ModelForm):
             'veterinario': 'Veterinario',
             'notas': 'Notas',
         }
+        error_messages = {
+            'mascota': {'required': 'Debes elegir la mascota.'},
+            'fecha': {'required': 'Debes ingresar la fecha.', 'invalid': 'Fecha no válida.'},
+            'veterinario': {'required': 'Debes ingresar el veterinario.'},
+        }
+
+    def clean_fecha(self):
+        fecha = self.cleaned_data.get('fecha')
+        if fecha and fecha > timezone.localdate():
+            raise forms.ValidationError('El registro clínico no puede tener fecha futura.')
+        return fecha
+
+    def clean_veterinario(self):
+        return limpiar_texto(self.cleaned_data.get('veterinario'))
+
+    def clean(self):
+        datos = super().clean()
+        for campo in ('diagnostico', 'tratamiento', 'notas'):
+            if campo in datos:
+                datos[campo] = limpiar_texto(datos[campo]) or None
+        if not (datos.get('diagnostico') or datos.get('tratamiento')):
+            raise forms.ValidationError('Ingresa al menos el diagnóstico o el tratamiento.')
+        return datos
 
 
 class VacunaForm(forms.ModelForm):

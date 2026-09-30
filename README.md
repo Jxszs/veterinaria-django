@@ -82,6 +82,31 @@ para que la clínica gestione a sus mascotas/pacientes.
 - `CitaAdmin`, `HistorialMedicoAdmin`, `VacunaAdmin` registrados en
   `mascotas/admin.py` con búsqueda, filtros, ordering y date_hierarchy.
 
+## Funcionalidades avanzadas — Joel (PUNTO 2)
+
+### JO1 — Dueños y CRUD completo
+
+- **CRUD de dueños** (`/mascotas/duenos/`): listar con buscador (nombre, correo
+  o usuario), crear, editar y eliminar. Cada dueño se asocia a un `User`.
+  - `DuenoForm` valida: un usuario solo puede tener un perfil de dueño, nombre
+    solo con letras, teléfonos de 8 a 15 dígitos (con `+` opcional) y que exista
+    al menos un medio de contacto (correo, teléfono o WhatsApp).
+  - Al eliminar un dueño sus mascotas no se borran (quedan sin dueño, `SET_NULL`).
+- **Mascota con dueño y raza** en el formulario web (antes solo existían en el modelo).
+- **Historial médico y vacunas con CRUD completo**: se agregaron editar y
+  eliminar (los botones antes apuntaban a `#`). El historial no acepta fechas
+  futuras y exige al menos diagnóstico o tratamiento.
+- **`mascotas/permisos.py`**: una sola regla de acceso por objeto para toda la app.
+  El personal (superusuario, grupos Veterinarios/Administradores) ve todo; un
+  cliente (usuario con perfil de dueño) ve solo lo de sus mascotas. Editar o
+  eliminar un registro ajeno devuelve 404.
+- **Ayudantes `_guardar_formulario` y `_confirmar_eliminacion`** en `views.py`:
+  aplican el mismo `try/except DatabaseError` + mensajes claros en todas las
+  vistas nuevas, sin repetir código.
+- **Plantillas**: barra de navegación con enlaces según permisos, include
+  `_campos_form.html` que ahora también muestra errores generales del
+  formulario, y se quitó el doble mensaje que salía en las listas.
+
 ## Cómo correrlo
 
 ```bash

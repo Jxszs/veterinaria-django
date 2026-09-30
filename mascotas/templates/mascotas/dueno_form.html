@@ -1,20 +1,19 @@
 {% extends 'base.html' %}
-{% block title %}{% if object %}Editar cita{% else %}Nueva cita{% endif %}{% endblock %}
+{% block title %}{% if object %}Editar dueño{% else %}Nuevo dueño{% endif %}{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8">
         <div class="card">
             <div class="card-body">
-                <h1 class="h4 mb-3">
-                    {% if object %}Editar cita{% else %}Programar nueva cita{% endif %}
-                </h1>
+                <h1 class="h4 mb-3">{% if object %}Editar a "{{ object.nombre }}"{% else %}Registrar nuevo dueño{% endif %}</h1>
+                <p class="text-muted small">El dueño se asocia a un usuario del sistema para que pueda iniciar sesión y ver solo sus mascotas.</p>
                 <form method="post" novalidate>
                     {% csrf_token %}
                     {% include 'mascotas/_campos_form.html' %}
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-success">Guardar</button>
-                        <a href="{% url 'mascotas:lista_citas' %}" class="btn btn-secondary">Cancelar</a>
+                        <a href="{% url 'mascotas:lista_duenos' %}" class="btn btn-secondary">Cancelar</a>
                     </div>
                 </form>
             </div>

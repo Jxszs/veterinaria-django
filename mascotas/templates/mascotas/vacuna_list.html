@@ -9,14 +9,6 @@
     {% endif %}
 </div>
 
-{% if messages %}
-    {% for message in messages %}
-        <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    {% endfor %}
-{% endif %}
 
 {% if vacunas %}
     <div class="table-responsive">
@@ -50,10 +42,10 @@
                         {% if perms.mascotas.change_vacuna or perms.mascotas.delete_vacuna %}
                             <td class="text-nowrap">
                                 {% if perms.mascotas.change_vacuna %}
-                                    <a href="#" class="btn btn-sm btn-outline-primary">Editar</a>
+                                    <a href="{% url 'mascotas:editar_vacuna' vacuna.pk %}" class="btn btn-sm btn-outline-primary">Editar</a>
                                 {% endif %}
                                 {% if perms.mascotas.delete_vacuna %}
-                                    <a href="#" class="btn btn-sm btn-outline-danger">Eliminar</a>
+                                    <a href="{% url 'mascotas:eliminar_vacuna' vacuna.pk %}" class="btn btn-sm btn-outline-danger">Eliminar</a>
                                 {% endif %}
                             </td>
                         {% endif %}

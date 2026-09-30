@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Eliminar vacuna{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <h3 class="h5 mb-0">⚠️ Confirmar eliminación</h3>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-light border">
+                    <p><strong>Mascota:</strong> {{ object.mascota.nombre }}</p>
+                    <p><strong>Vacuna:</strong> {{ object.get_tipo_display }}</p>
+                    <p class="mb-0"><strong>Aplicada:</strong> {{ object.fecha_aplicacion|date:"d/m/Y" }}</p>
+                </div>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-danger">Eliminar vacuna</button>
+                        <a href="{% url 'mascotas:lista_vacunas' %}" class="btn btn-secondary">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

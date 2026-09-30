@@ -3,10 +3,12 @@ import logging
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import DatabaseError
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .models import Mascota, Cita, HistorialMedico, Vacuna
-from .forms import MascotaForm, CitaForm, HistorialMedicoForm, VacunaForm
+from .models import Dueño, Mascota, Cita, HistorialMedico, Vacuna
+from .forms import DuenoForm, MascotaForm, CitaForm, HistorialMedicoForm, VacunaForm
+from .permisos import filtrar_por_dueno
 
 
 logger = logging.getLogger(__name__)
@@ -125,6 +127,119 @@ def eliminar_mascota(request, pk):
 
 
 # ────────────────────────────────────────────────────────────────────────────────
+# Ayudantes reutilizables (JO1): guardan/eliminan con el mismo manejo de
+# errores que usan las vistas de mascotas (try/except DatabaseError + mensajes).
+# ────────────────────────────────────────────────────────────────────────────────
+
+def _guardar_formulario(request, form_class, template, url_exito, mensaje_ok,
+                        instancia=None, contexto_extra=None, initial=None):
+    """
+    Procesa un formulario de alta o edición.
+
+    - GET: muestra el formulario vacío (o con los datos de `instancia`).
+    - POST válido: guarda dentro de try/except y redirige a `url_exito`.
+    - POST inválido: vuelve a mostrar el formulario con los errores en rojo.
+
+    `mensaje_ok` recibe el objeto guardado y devuelve el texto de éxito.
+    """
+    if request.method == 'POST':
+        form = form_class(request.POST, instance=instancia)
+        if form.is_valid():
+            try:
+                objeto = form.save()
+            except DatabaseError:
+                logger.exception('Error al guardar %s', form_class.__name__)
+                messages.error(request, 'No se pudieron guardar los datos. ' + ERROR_BD)
+            else:
+                messages.success(request, mensaje_ok(objeto))
+                return redirect(url_exito)
+        else:
+            messages.warning(request, 'Revisa los campos marcados en rojo.')
+    else:
+        form = form_class(instance=instancia, initial=initial)
+    contexto = {'form': form, 'object': instancia}
+    contexto.update(contexto_extra or {})
+    return render(request, template, contexto)
+
+
+def _confirmar_eliminacion(request, objeto, template, url_exito, descripcion):
+    """GET muestra la confirmación; POST elimina con manejo de errores."""
+    if request.method == 'POST':
+        try:
+            objeto.delete()
+        except DatabaseError:
+            logger.exception('Error al eliminar %s', descripcion)
+            messages.error(request, f'No se pudo eliminar {descripcion}. ' + ERROR_BD)
+        else:
+            messages.success(request, f'Se eliminó {descripcion}.')
+        return redirect(url_exito)
+    return render(request, template, {'object': objeto})
+
+
+def _mascota_inicial(request):
+    """Permite abrir un formulario con la mascota ya elegida (?mascota=ID)."""
+    mascota_id = request.GET.get('mascota', '')
+    return {'mascota': mascota_id} if mascota_id.isdigit() else None
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Vistas para Dueño (JO1)
+# ────────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@permission_required('mascotas.view_dueño', raise_exception=True)
+def listar_duenos(request):
+    """Lista de dueños con buscador por nombre, correo o usuario."""
+    query = request.GET.get('q', '').strip()[:100]
+    contexto = {'duenos': [], 'query': query}
+    try:
+        duenos = filtrar_por_dueno(
+            Dueño.objects.select_related('user').annotate(total_mascotas=Count('mascotas')),
+            request.user, ruta='user',
+        )
+        if query:
+            duenos = duenos.filter(
+                Q(nombre__icontains=query) | Q(email__icontains=query)
+                | Q(user__username__icontains=query)
+            )
+        contexto['duenos'] = list(duenos)
+    except DatabaseError:
+        logger.exception('Error al listar dueños')
+        messages.error(request, 'No se pudieron cargar los dueños. ' + ERROR_BD)
+    return render(request, 'mascotas/dueno_list.html', contexto)
+
+
+@login_required
+@permission_required('mascotas.add_dueño', raise_exception=True)
+def crear_dueno(request):
+    return _guardar_formulario(
+        request, DuenoForm, 'mascotas/dueno_form.html', 'mascotas:lista_duenos',
+        lambda d: f'Se registró al dueño "{d.nombre}".',
+    )
+
+
+@login_required
+@permission_required('mascotas.change_dueño', raise_exception=True)
+def editar_dueno(request, pk):
+    dueno = get_object_or_404(Dueño, pk=pk)
+    return _guardar_formulario(
+        request, DuenoForm, 'mascotas/dueno_form.html', 'mascotas:lista_duenos',
+        lambda d: f'Se actualizaron los datos de "{d.nombre}".', instancia=dueno,
+    )
+
+
+@login_required
+@permission_required('mascotas.delete_dueño', raise_exception=True)
+def eliminar_dueno(request, pk):
+    """Al eliminar un dueño sus mascotas NO se borran: quedan sin dueño (SET_NULL)."""
+    dueno = get_object_or_404(Dueño, pk=pk)
+    return _confirmar_eliminacion(
+        request, dueno, 'mascotas/dueno_confirm_delete.html', 'mascotas:lista_duenos',
+        f'al dueño "{dueno.nombre}"',
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────────
 # Vistas para Cita
 # ────────────────────────────────────────────────────────────────────────────────
 
@@ -132,8 +247,7 @@ def eliminar_mascota(request, pk):
 @permission_required('mascotas.view_cita', raise_exception=True)
 def listar_citas(request):
     """
-    Lista todas las citas programadas.
-    Solo el superusuario ve todas; los demás ven solo las de sus mascotas.
+    Lista las citas. El personal ve todas; un cliente solo las de sus mascotas.
     """
     query = request.GET.get('q', '').strip()[:100]
     estado = request.GET.get('estado', '').strip()
@@ -145,13 +259,10 @@ def listar_citas(request):
     }
 
     try:
-        if request.user.is_superuser:
-            citas = Cita.objects.select_related('mascota').all()
-        else:
-            # Object-level permission: solo ver citas de sus propias mascotas
-            citas = Cita.objects.select_related('mascota').filter(
-                mascota__dueno__user=request.user
-            )
+        # Object-level permission: los clientes solo ven lo de sus mascotas
+        citas = filtrar_por_dueno(
+            Cita.objects.select_related('mascota', 'mascota__dueno'), request.user
+        )
 
         if query:
             citas = citas.filter(mascota__nombre__icontains=query)
@@ -183,7 +294,7 @@ def crear_cita(request):
         else:
             messages.warning(request, 'Revisa los campos marcados en rojo.')
     else:
-        form = CitaForm()
+        form = CitaForm(initial=_mascota_inicial(request))
     return render(request, 'mascotas/cita_form.html', {'form': form})
 
 
@@ -191,7 +302,7 @@ def crear_cita(request):
 @permission_required('mascotas.change_cita', raise_exception=True)
 def editar_cita(request, pk):
     """Edición de una cita existente."""
-    cita = get_object_or_404(Cita, pk=pk)
+    cita = get_object_or_404(filtrar_por_dueno(Cita.objects.all(), request.user), pk=pk)
     if request.method == 'POST':
         form = CitaForm(request.POST, instance=cita)
         if form.is_valid():
@@ -214,7 +325,7 @@ def editar_cita(request, pk):
 @permission_required('mascotas.delete_cita', raise_exception=True)
 def eliminar_cita(request, pk):
     """Eliminación de una cita."""
-    cita = get_object_or_404(Cita, pk=pk)
+    cita = get_object_or_404(filtrar_por_dueno(Cita.objects.all(), request.user), pk=pk)
     if request.method == 'POST':
         try:
             cita.delete()
@@ -235,8 +346,7 @@ def eliminar_cita(request, pk):
 @permission_required('mascotas.view_historialmedico', raise_exception=True)
 def listar_historial(request):
     """
-    Lista el historial médico de todas las mascotas.
-    Solo el superusuario ve todas; los demás ven solo el de sus mascotas.
+    Lista el historial médico. El personal ve todo; un cliente solo el de sus mascotas.
     """
     query = request.GET.get('q', '').strip()[:100]
     mascota_id = request.GET.get('mascota', '').strip()
@@ -248,13 +358,10 @@ def listar_historial(request):
     }
 
     try:
-        if request.user.is_superuser:
-            historial = HistorialMedico.objects.select_related('mascota').all()
-        else:
-            # Object-level permission: solo ver historial de sus propias mascotas
-            historial = HistorialMedico.objects.select_related('mascota').filter(
-                mascota__dueno__user=request.user
-            )
+        # Object-level permission: los clientes solo ven lo de sus mascotas
+        historial = filtrar_por_dueno(
+            HistorialMedico.objects.select_related('mascota', 'mascota__dueno'), request.user
+        )
 
         if query:
             historial = historial.filter(mascota__nombre__icontains=query)
@@ -286,8 +393,34 @@ def crear_historial(request):
         else:
             messages.warning(request, 'Revisa los campos marcados en rojo.')
     else:
-        form = HistorialMedicoForm()
+        form = HistorialMedicoForm(initial=_mascota_inicial(request))
     return render(request, 'mascotas/historial_form.html', {'form': form})
+
+
+@login_required
+@permission_required('mascotas.change_historialmedico', raise_exception=True)
+def editar_historial(request, pk):
+    registro = get_object_or_404(
+        filtrar_por_dueno(HistorialMedico.objects.all(), request.user), pk=pk
+    )
+    return _guardar_formulario(
+        request, HistorialMedicoForm, 'mascotas/historial_form.html',
+        'mascotas:lista_historial',
+        lambda r: f'Se actualizó el registro de "{r.mascota.nombre}".', instancia=registro,
+    )
+
+
+@login_required
+@permission_required('mascotas.delete_historialmedico', raise_exception=True)
+def eliminar_historial(request, pk):
+    registro = get_object_or_404(
+        filtrar_por_dueno(HistorialMedico.objects.all(), request.user), pk=pk
+    )
+    return _confirmar_eliminacion(
+        request, registro, 'mascotas/historial_confirm_delete.html',
+        'mascotas:lista_historial',
+        f'el registro del {registro.fecha:%d/%m/%Y} de "{registro.mascota.nombre}"',
+    )
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -298,8 +431,7 @@ def crear_historial(request):
 @permission_required('mascotas.view_vacuna', raise_exception=True)
 def listar_vacunas(request):
     """
-    Lista todas las vacunas registradas.
-    Solo el superusuario ve todas; los demás ven solo las de sus mascotas.
+    Lista las vacunas. El personal ve todas; un cliente solo las de sus mascotas.
     """
     query = request.GET.get('q', '').strip()[:100]
     tipo = request.GET.get('tipo', '').strip()
@@ -311,13 +443,10 @@ def listar_vacunas(request):
     }
 
     try:
-        if request.user.is_superuser:
-            vacunas = Vacuna.objects.select_related('mascota').all()
-        else:
-            # Object-level permission: solo ver vacunas de sus propias mascotas
-            vacunas = Vacuna.objects.select_related('mascota').filter(
-                mascota__dueno__user=request.user
-            )
+        # Object-level permission: los clientes solo ven lo de sus mascotas
+        vacunas = filtrar_por_dueno(
+            Vacuna.objects.select_related('mascota', 'mascota__dueno'), request.user
+        )
 
         if query:
             vacunas = vacunas.filter(mascota__nombre__icontains=query)
@@ -346,11 +475,31 @@ def crear_vacuna(request):
             else:
                 messages.success(
                     request,
-                    f'Se registró vacuna "{vacuna.tipo}" para "{vacuna.mascota.nombre}".'
+                    f'Se registró vacuna "{vacuna.get_tipo_display()}" para "{vacuna.mascota.nombre}".'
                 )
                 return redirect('mascotas:lista_vacunas')
         else:
             messages.warning(request, 'Revisa los campos marcados en rojo.')
     else:
-        form = VacunaForm()
+        form = VacunaForm(initial=_mascota_inicial(request))
     return render(request, 'mascotas/vacuna_form.html', {'form': form})
+
+
+@login_required
+@permission_required('mascotas.change_vacuna', raise_exception=True)
+def editar_vacuna(request, pk):
+    vacuna = get_object_or_404(filtrar_por_dueno(Vacuna.objects.all(), request.user), pk=pk)
+    return _guardar_formulario(
+        request, VacunaForm, 'mascotas/vacuna_form.html', 'mascotas:lista_vacunas',
+        lambda v: f'Se actualizó la vacuna de "{v.mascota.nombre}".', instancia=vacuna,
+    )
+
+
+@login_required
+@permission_required('mascotas.delete_vacuna', raise_exception=True)
+def eliminar_vacuna(request, pk):
+    vacuna = get_object_or_404(filtrar_por_dueno(Vacuna.objects.all(), request.user), pk=pk)
+    return _confirmar_eliminacion(
+        request, vacuna, 'mascotas/vacuna_confirm_delete.html', 'mascotas:lista_vacunas',
+        f'la vacuna {vacuna.get_tipo_display()} de "{vacuna.mascota.nombre}"',
+    )

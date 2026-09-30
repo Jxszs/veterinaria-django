@@ -63,6 +63,7 @@
                 <th>Nombre</th>
                 <th>Especie</th>
                 <th>Edad</th>
+                <th>Dueño</th>
                 <th>Vacunado</th>
                 {% if perms.mascotas.change_mascota or perms.mascotas.delete_mascota %}
                     <th>Acciones</th>
@@ -75,6 +76,7 @@
                     <td>{{ mascota.nombre }}</td>
                     <td>{{ mascota.especie }}</td>
                     <td>{{ mascota.edad }}</td>
+                    <td>{{ mascota.dueno.nombre|default:"—" }}</td>
                     <td>
                         {% if mascota.alergico %}
                             <span class="badge badge-alergia">🟡 Alergia</span>
@@ -97,7 +99,7 @@
                 </tr>
             {% empty %}
                 <tr>
-                    <td colspan="5" class="text-center text-muted py-4">No hay mascotas que coincidan con la búsqueda.</td>
+                    <td colspan="6" class="text-center text-muted py-4">No hay mascotas que coincidan con la búsqueda.</td>
                 </tr>
             {% endfor %}
         </tbody>
