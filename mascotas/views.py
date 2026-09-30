@@ -1,10 +1,13 @@
 import logging
+from datetime import time
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import DatabaseError
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from .models import Dueño, Mascota, Cita, HistorialMedico, Vacuna
 from .forms import DuenoForm, MascotaForm, CitaForm, HistorialMedicoForm, VacunaForm
@@ -124,6 +127,68 @@ def eliminar_mascota(request, pk):
             messages.success(request, f'Se eliminó a "{nombre}".')
         return redirect('mascotas:lista')
     return render(request, 'mascotas/mascota_confirm_delete.html', {'object': mascota})
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Ficha de la mascota con línea de tiempo (JO2)
+# ────────────────────────────────────────────────────────────────────────────────
+
+def _linea_de_tiempo(mascota):
+    """
+    Junta citas, vacunas e historial médico en una sola lista ordenada
+    del evento más reciente al más antiguo.
+    """
+    eventos = []
+    for cita in mascota.citas.all():
+        eventos.append({
+            'fecha': cita.fecha, 'hora': cita.hora, 'tipo': 'cita', 'icono': '📅',
+            'titulo': f'Cita: {cita.motivo or "consulta"}',
+            'detalle': f'{cita.veterinario} — {cita.get_estado_display()}',
+            'objeto': cita,
+        })
+    for vacuna in mascota.vacunas.all():
+        detalle = f'Lote {vacuna.lote}' if vacuna.lote else ''
+        if vacuna.proxima_dosis:
+            detalle = (detalle + ' — ' if detalle else '') + f'próxima dosis {vacuna.proxima_dosis:%d/%m/%Y}'
+        eventos.append({
+            'fecha': vacuna.fecha_aplicacion, 'hora': None, 'tipo': 'vacuna', 'icono': '💉',
+            'titulo': f'Vacuna {vacuna.get_tipo_display()}', 'detalle': detalle,
+            'objeto': vacuna,
+        })
+    for registro in mascota.historial.all():
+        eventos.append({
+            'fecha': registro.fecha, 'hora': None, 'tipo': 'historial', 'icono': '🩺',
+            'titulo': registro.diagnostico or 'Registro clínico',
+            'detalle': f'{registro.veterinario} — {registro.tratamiento or "sin tratamiento indicado"}',
+            'objeto': registro,
+        })
+    # Orden: fecha y hora descendente (los eventos sin hora van al final del día).
+    eventos.sort(key=lambda e: (e['fecha'], e['hora'] or time.min), reverse=True)
+    return eventos
+
+
+@login_required
+def ficha_mascota(request, pk):
+    """
+    Ficha clínica de una mascota: datos, dueño, próximas citas y una línea de
+    tiempo con todo lo que le ha pasado (citas, vacunas e historial).
+    Un cliente solo puede abrir la ficha de sus propias mascotas.
+    """
+    mascota = get_object_or_404(
+        filtrar_por_dueno(Mascota.objects.select_related('dueno'), request.user, ruta='dueno__user'),
+        pk=pk,
+    )
+    contexto = {'mascota': mascota, 'eventos': [], 'proximas_citas': []}
+    try:
+        hoy = timezone.localdate()
+        contexto['proximas_citas'] = list(
+            mascota.citas.filter(fecha__gte=hoy, estado='programada').order_by('fecha', 'hora')
+        )
+        contexto['eventos'] = _linea_de_tiempo(mascota)
+    except DatabaseError:
+        logger.exception('Error al cargar la ficha de la mascota %s', pk)
+        messages.error(request, 'No se pudo cargar la ficha completa. ' + ERROR_BD)
+    return render(request, 'mascotas/mascota_ficha.html', contexto)
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -251,11 +316,14 @@ def listar_citas(request):
     """
     query = request.GET.get('q', '').strip()[:100]
     estado = request.GET.get('estado', '').strip()
+    cuando = request.GET.get('cuando', '').strip()
 
     contexto = {
         'citas': [],
         'query': query,
         'estado_seleccionado': estado,
+        'cuando_seleccionado': cuando,
+        'estados': Cita.ESTADO_CHOICES,
     }
 
     try:
@@ -268,6 +336,13 @@ def listar_citas(request):
             citas = citas.filter(mascota__nombre__icontains=query)
         if estado:
             citas = citas.filter(estado__iexact=estado)
+        hoy = timezone.localdate()
+        if cuando == 'hoy':
+            citas = citas.filter(fecha=hoy)
+        elif cuando == 'proximas':
+            citas = citas.filter(fecha__gte=hoy, estado='programada')
+        elif cuando == 'pasadas':
+            citas = citas.filter(fecha__lt=hoy).order_by('-fecha', '-hora')
         contexto['citas'] = list(citas)
     except DatabaseError:
         logger.exception('Error al listar citas')
@@ -336,6 +411,36 @@ def eliminar_cita(request, pk):
             messages.success(request, 'Se eliminó la cita.')
         return redirect('mascotas:lista_citas')
     return render(request, 'mascotas/cita_confirm_delete.html', {'object': cita})
+
+
+@login_required
+@permission_required('mascotas.change_cita', raise_exception=True)
+@require_POST
+def cancelar_cita(request, pk):
+    """
+    Cancela una cita sin borrarla (JO2), así queda en el historial de la mascota.
+    Solo se puede cancelar una cita programada o en curso. Solo acepta POST (CSRF).
+    """
+    cita = get_object_or_404(filtrar_por_dueno(Cita.objects.all(), request.user), pk=pk)
+    if cita.estado not in ('programada', 'en_curso'):
+        messages.warning(
+            request, f'La cita ya está {cita.get_estado_display().lower()}; no se puede cancelar.'
+        )
+    else:
+        cita.estado = 'cancelada'
+        try:
+            cita.save(update_fields=['estado'])
+        except DatabaseError:
+            logger.exception('Error al cancelar cita %s', pk)
+            messages.error(request, 'No se pudo cancelar la cita. ' + ERROR_BD)
+        else:
+            messages.success(
+                request, f'Se canceló la cita de "{cita.mascota.nombre}" del {cita.fecha:%d/%m/%Y}.'
+            )
+    siguiente = request.POST.get('next', '')
+    if siguiente.startswith('/') and not siguiente.startswith('//'):
+        return redirect(siguiente)
+    return redirect('mascotas:lista_citas')
 
 
 # ────────────────────────────────────────────────────────────────────────────────

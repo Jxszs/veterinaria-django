@@ -107,6 +107,28 @@ para que la clínica gestione a sus mascotas/pacientes.
   `_campos_form.html` que ahora también muestra errores generales del
   formulario, y se quitó el doble mensaje que salía en las listas.
 
+### JO2 — Citas avanzadas y ficha con línea de tiempo
+
+- **Validaciones de `CitaForm`**:
+  - No se puede programar ni reprogramar una cita en una fecha u hora pasada
+    (editar una cita antigua sin mover la fecha sí se permite, por ejemplo para
+    marcarla como finalizada).
+  - Solo dentro del horario de atención (`HORA_APERTURA`–`HORA_CIERRE`, 09:00–20:00).
+  - Sin choques: el mismo veterinario o la misma mascota no pueden tener dos
+    citas a la misma fecha y hora (las canceladas no ocupan horario).
+- **Cancelar cita** (`POST /mascotas/citas/<id>/cancelar/`): cambia el estado a
+  "cancelada" en vez de borrarla, así queda en el historial. Solo acepta POST
+  con token CSRF y solo cancela citas programadas o en curso.
+- **Filtros en la lista de citas**: por mascota, por estado y por momento
+  (hoy, próximas, pasadas).
+- **Ficha de la mascota** (`/mascotas/<id>/`): datos, dueño, estado de
+  vacunación, próximas citas y una **línea de tiempo** que junta citas,
+  vacunas e historial médico en orden cronológico. Desde la ficha se puede
+  agregar una cita, vacuna o registro con la mascota ya elegida (`?mascota=<id>`).
+  Un cliente solo puede abrir la ficha de sus mascotas (otra da 404).
+- Los campos de fecha ahora usan formato `AAAA-MM-DD`, para que al **editar**
+  el navegador muestre la fecha guardada (antes el campo quedaba vacío).
+
 ## Cómo correrlo
 
 ```bash

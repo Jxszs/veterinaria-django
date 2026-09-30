@@ -10,6 +10,7 @@ urlpatterns = [
     path('nueva/', views.crear_mascota, name='crear'),
     path('<int:pk>/editar/', views.editar_mascota, name='editar'),
     path('<int:pk>/eliminar/', views.eliminar_mascota, name='eliminar'),
+    path('<int:pk>/', views.ficha_mascota, name='ficha'),
 
     # ── Dueños (JO1) ──
     path('duenos/', views.listar_duenos, name='lista_duenos'),
@@ -22,6 +23,7 @@ urlpatterns = [
     path('citas/nueva/', views.crear_cita, name='crear_cita'),
     path('citas/<int:pk>/editar/', views.editar_cita, name='editar_cita'),
     path('citas/<int:pk>/eliminar/', views.eliminar_cita, name='eliminar_cita'),
+    path('citas/<int:pk>/cancelar/', views.cancelar_cita, name='cancelar_cita'),
 
     # ── Historial Médico ──
     path('historial/', views.listar_historial, name='lista_historial'),

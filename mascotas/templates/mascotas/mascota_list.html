@@ -73,7 +73,7 @@
         <tbody>
             {% for mascota in mascotas %}
                 <tr class="{% if mascota.alergico %}table-alergia{% elif mascota.vacunado %}table-al-dia{% else %}table-pendiente{% endif %}">
-                    <td>{{ mascota.nombre }}</td>
+                    <td><a href="{% url 'mascotas:ficha' mascota.pk %}" class="fw-semibold">{{ mascota.nombre }}</a></td>
                     <td>{{ mascota.especie }}</td>
                     <td>{{ mascota.edad }}</td>
                     <td>{{ mascota.dueno.nombre|default:"—" }}</td>

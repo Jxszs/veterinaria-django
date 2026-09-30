@@ -1,3 +1,5 @@
+from datetime import datetime, time
+
 from django import forms
 from django.contrib.auth.models import User
 from django.utils import timezone
@@ -174,12 +176,23 @@ class DuenoForm(forms.ModelForm):
         return datos
 
 
+# Horario de atención de la clínica (usado para validar las citas).
+HORA_APERTURA = time(9, 0)
+HORA_CIERRE = time(20, 0)
+
+
 class CitaForm(forms.ModelForm):
-    """Formulario para crear y editar citas."""
+    """
+    Formulario para programar y editar citas (JO2).
+
+    Valida: que la cita no quede en el pasado, que esté dentro del horario de
+    atención y que no choque con otra cita del mismo veterinario o de la misma
+    mascota a la misma hora (las citas canceladas no cuentan).
+    """
 
     class Meta:
         model = Cita
-        fields = ['mascota', 'veterinario', 'fecha', 'hora', 'motivo', 'estado']
+        fields = ['mascota', 'veterinario', 'fecha', 'hora', 'motivo', 'estado', 'observaciones']
         widgets = {
             'mascota': forms.Select(attrs={'class': 'form-select'}),
             'veterinario': forms.TextInput(attrs={
@@ -189,16 +202,21 @@ class CitaForm(forms.ModelForm):
             'fecha': forms.DateInput(attrs={
                 'class': 'form-control',
                 'type': 'date',
-            }),
+            }, format='%Y-%m-%d'),
             'hora': forms.TimeInput(attrs={
                 'class': 'form-control',
                 'type': 'time',
-            }),
+            }, format='%H:%M'),
             'motivo': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Ej: Chequeo anual, vacunación...',
             }),
             'estado': forms.Select(attrs={'class': 'form-select'}),
+            'observaciones': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 2,
+                'placeholder': 'Notas del veterinario (opcional)',
+            }),
         }
         labels = {
             'mascota': 'Mascota',
@@ -207,7 +225,71 @@ class CitaForm(forms.ModelForm):
             'hora': 'Hora',
             'motivo': 'Motivo',
             'estado': 'Estado',
+            'observaciones': 'Observaciones',
         }
+        error_messages = {
+            'mascota': {'required': 'Debes elegir la mascota.'},
+            'veterinario': {'required': 'Debes indicar el veterinario a cargo.'},
+            'fecha': {'required': 'Debes ingresar la fecha.', 'invalid': 'Fecha no válida.'},
+            'hora': {'required': 'Debes ingresar la hora.', 'invalid': 'Hora no válida.'},
+        }
+
+    def clean_veterinario(self):
+        veterinario = limpiar_texto(self.cleaned_data.get('veterinario'))
+        if len(veterinario) < 3:
+            raise forms.ValidationError('El nombre del veterinario debe tener al menos 3 letras.')
+        # Se permite el punto de "Dr." / "Dra."
+        if not SOLO_LETRAS.match(veterinario.replace('.', '')):
+            raise forms.ValidationError('El veterinario solo puede contener letras, espacios y puntos.')
+        return veterinario
+
+    def clean_motivo(self):
+        return limpiar_texto(self.cleaned_data.get('motivo')) or None
+
+    def clean_observaciones(self):
+        return limpiar_texto(self.cleaned_data.get('observaciones')) or None
+
+    def clean_hora(self):
+        hora = self.cleaned_data.get('hora')
+        if hora and not (HORA_APERTURA <= hora <= HORA_CIERRE):
+            raise forms.ValidationError(
+                f'La clínica atiende de {HORA_APERTURA:%H:%M} a {HORA_CIERRE:%H:%M}.'
+            )
+        return hora
+
+    def clean(self):
+        datos = super().clean()
+        fecha, hora = datos.get('fecha'), datos.get('hora')
+        estado = datos.get('estado')
+        if not (fecha and hora):
+            return datos
+
+        # Una cita nueva o reprogramada no puede quedar en el pasado.
+        cambio_fecha = not self.instance.pk or (
+            fecha != self.instance.fecha or hora != self.instance.hora
+        )
+        momento = timezone.make_aware(datetime.combine(fecha, hora))
+        if estado == 'programada' and cambio_fecha and momento < timezone.now():
+            self.add_error('fecha', 'No se puede programar una cita en una fecha u hora que ya pasó.')
+
+        if estado == 'cancelada':
+            return datos
+
+        # Choques de horario (las citas canceladas no ocupan el horario).
+        activas = Cita.objects.filter(fecha=fecha, hora=hora).exclude(
+            estado='cancelada'
+        ).exclude(pk=self.instance.pk)
+        veterinario = datos.get('veterinario')
+        if veterinario and activas.filter(veterinario__iexact=veterinario).exists():
+            raise forms.ValidationError(
+                f'{veterinario} ya tiene una cita el {fecha:%d/%m/%Y} a las {hora:%H:%M}.'
+            )
+        mascota = datos.get('mascota')
+        if mascota and activas.filter(mascota=mascota).exists():
+            raise forms.ValidationError(
+                f'{mascota.nombre} ya tiene otra cita el {fecha:%d/%m/%Y} a las {hora:%H:%M}.'
+            )
+        return datos
 
 
 class HistorialMedicoForm(forms.ModelForm):
@@ -221,7 +303,7 @@ class HistorialMedicoForm(forms.ModelForm):
             'fecha': forms.DateInput(attrs={
                 'class': 'form-control',
                 'type': 'date',
-            }),
+            }, format='%Y-%m-%d'),
             'diagnostico': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Diagnóstico principal',
@@ -286,11 +368,11 @@ class VacunaForm(forms.ModelForm):
             'fecha_aplicacion': forms.DateInput(attrs={
                 'class': 'form-control',
                 'type': 'date',
-            }),
+            }, format='%Y-%m-%d'),
             'proxima_dosis': forms.DateInput(attrs={
                 'class': 'form-control',
                 'type': 'date',
-            }),
+            }, format='%Y-%m-%d'),
             'lote': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Ej: L-2024-001',
