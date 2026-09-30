@@ -6,7 +6,10 @@ from django.utils import timezone
 from django.utils.html import strip_tags
 import re
 
-from .models import Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Producto, Vacuna
+from .models import (
+    Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Producto,
+    Receta, Vacuna,
+)
 
 # Solo letras (con tildes y ñ), espacios, guiones y apóstrofes.
 SOLO_LETRAS = re.compile(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]+$")
@@ -26,7 +29,10 @@ class MascotaForm(forms.ModelForm):
 
     class Meta:
         model = Mascota
-        fields = ['nombre', 'especie', 'raza', 'edad', 'dueno', 'vacunado', 'alergico']
+        fields = [
+            'nombre', 'especie', 'raza', 'edad', 'fecha_nacimiento', 'peso',
+            'sexo', 'estado', 'dueno', 'foto', 'vacunado', 'alergico',
+        ]
         widgets = {
             'nombre': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -48,7 +54,16 @@ class MascotaForm(forms.ModelForm):
                 'min': 0,
                 'max': 40,
             }),
+            'fecha_nacimiento': forms.DateInput(
+                attrs={'class': 'form-control', 'type': 'date'}, format='%Y-%m-%d'
+            ),
+            'peso': forms.NumberInput(attrs={
+                'class': 'form-control', 'step': '0.01', 'min': 0.01, 'placeholder': 'Ej: 12.50',
+            }),
+            'sexo': forms.Select(attrs={'class': 'form-select'}),
+            'estado': forms.Select(attrs={'class': 'form-select'}),
             'dueno': forms.Select(attrs={'class': 'form-select'}),
+            'foto': forms.ClearableFileInput(attrs={'class': 'form-control'}),
             'vacunado': forms.CheckboxInput(attrs={
                 'class': 'form-check-input',
             }),
@@ -61,7 +76,12 @@ class MascotaForm(forms.ModelForm):
             'especie': 'Especie',
             'raza': 'Raza',
             'edad': 'Edad (años)',
+            'fecha_nacimiento': 'Fecha de nacimiento',
+            'peso': 'Peso (kg)',
+            'sexo': 'Sexo',
+            'estado': 'Estado',
             'dueno': 'Dueño',
+            'foto': 'Foto',
             'vacunado': '¿Está vacunado?',
             'alergico': '¿Es alérgico a las vacunas?',
         }
@@ -72,6 +92,8 @@ class MascotaForm(forms.ModelForm):
                 'required': 'Debes ingresar la edad.',
                 'invalid': 'La edad debe ser un número entero.',
             },
+            'fecha_nacimiento': {'invalid': 'Ingresa una fecha válida.'},
+            'peso': {'invalid': 'El peso debe ser un número.'},
         }
 
     def clean_nombre(self):
@@ -100,6 +122,31 @@ class MascotaForm(forms.ModelForm):
             raise forms.ValidationError('La raza solo puede contener letras y espacios.')
         return raza.title()
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # `estado` y `sexo` tienen valor por defecto en el modelo, así que no
+        # tienen por qué ser obligatorios en el formulario: si el usuario no
+        # elige nada, se guarda el valor por defecto del modelo.
+        for campo in ('estado', 'sexo'):
+            self.fields[campo].required = False
+            self.fields[campo].empty_label = 'Sin especificar'
+
+    def clean_fecha_nacimiento(self):
+        fecha = self.cleaned_data.get('fecha_nacimiento')
+        if fecha and fecha > timezone.localdate():
+            raise forms.ValidationError('La fecha de nacimiento no puede ser futura.')
+        return fecha
+
+    def clean_peso(self):
+        peso = self.cleaned_data.get('peso')
+        if peso is None:
+            return None
+        if peso <= 0:
+            raise forms.ValidationError('El peso debe ser mayor a 0.')
+        if peso > 500:
+            raise forms.ValidationError('Revisa el peso: parece demasiado alto.')
+        return peso
+
 
 class DuenoForm(forms.ModelForm):
     """
@@ -109,14 +156,15 @@ class DuenoForm(forms.ModelForm):
 
     class Meta:
         model = Dueño
-        fields = ['user', 'nombre', 'email', 'telefono', 'whatsapp', 'direccion']
+        fields = ['user', 'nombre', 'email', 'telefono', 'whatsapp', 'direccion', 'ciudad']
         widgets = {
             'user': forms.Select(attrs={'class': 'form-select'}),
             'nombre': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: María González'}),
             'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'correo@ejemplo.cl'}),
-            'telefono': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: +56912345678'}),
-            'whatsapp': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: +56912345678'}),
+            'telefono': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: +569****5678'}),
+            'whatsapp': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: +569****5678'}),
             'direccion': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Calle, número, comuna'}),
+            'ciudad': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: Santiago'}),
         }
         labels = {
             'user': 'Usuario del sistema',
@@ -125,11 +173,15 @@ class DuenoForm(forms.ModelForm):
             'telefono': 'Teléfono',
             'whatsapp': 'WhatsApp',
             'direccion': 'Dirección',
+            'ciudad': 'Ciudad',
         }
         error_messages = {
             'user': {'required': 'Debes elegir el usuario con el que el dueño inicia sesión.'},
             'nombre': {'required': 'Debes ingresar el nombre del dueño.'},
-            'email': {'invalid': 'Ingresa un correo válido (ej: nombre@correo.cl).'},
+            'email': {
+                'invalid': 'Ingresa un correo válido (ej: nombre@correo.cl).',
+                'unique': 'Ya existe un dueño registrado con ese correo.',
+            },
         }
 
     def __init__(self, *args, **kwargs):
@@ -168,6 +220,16 @@ class DuenoForm(forms.ModelForm):
     def clean_direccion(self):
         return limpiar_texto(self.cleaned_data.get('direccion')) or None
 
+    def clean_ciudad(self):
+        ciudad = limpiar_texto(self.cleaned_data.get('ciudad'))
+        if not ciudad:
+            return None
+        if len(ciudad) < 3:
+            raise forms.ValidationError('La ciudad debe tener al menos 3 letras.')
+        if not SOLO_LETRAS.match(ciudad):
+            raise forms.ValidationError('La ciudad solo puede contener letras y espacios.')
+        return ciudad.title()
+
     def clean(self):
         datos = super().clean()
         # Sin al menos un medio de contacto, la clínica no puede avisar de vacunas ni citas.
@@ -192,7 +254,7 @@ class CitaForm(forms.ModelForm):
 
     class Meta:
         model = Cita
-        fields = ['mascota', 'veterinario', 'fecha', 'hora', 'motivo', 'estado', 'observaciones']
+        fields = ['mascota', 'veterinario', 'fecha', 'hora', 'motivo', 'estado', 'duracion', 'observaciones']
         widgets = {
             'mascota': forms.Select(attrs={'class': 'form-select'}),
             'veterinario': forms.TextInput(attrs={
@@ -212,6 +274,13 @@ class CitaForm(forms.ModelForm):
                 'placeholder': 'Ej: Chequeo anual, vacunación...',
             }),
             'estado': forms.Select(attrs={'class': 'form-select'}),
+            'duracion': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': 5,
+                'max': 480,
+                'step': 5,
+                'placeholder': 'Ej: 30 (opcional)',
+            }),
             'observaciones': forms.Textarea(attrs={
                 'class': 'form-control',
                 'rows': 2,
@@ -225,6 +294,7 @@ class CitaForm(forms.ModelForm):
             'hora': 'Hora',
             'motivo': 'Motivo',
             'estado': 'Estado',
+            'duracion': 'Duración (minutos)',
             'observaciones': 'Observaciones',
         }
         error_messages = {
@@ -572,6 +642,91 @@ class ProductoForm(forms.ModelForm):
         if not unidad:
             raise forms.ValidationError('Indica la unidad (ej: unidad, caja, frasco).')
         return unidad
+
+
+class RecetaForm(forms.ModelForm):
+    """
+    Formulario para indicar un medicamento en una cita.
+
+    La cita se elige de una sola vez: así la receta siempre queda ligada a
+    una consulta real, y de ahí se heredan la mascota y el dueño.
+    """
+
+    class Meta:
+        model = Receta
+        fields = ['cita', 'medicamento', 'dosis', 'duracion_dias', 'fecha', 'observaciones']
+        widgets = {
+            'cita': forms.Select(attrs={'class': 'form-select'}),
+            'medicamento': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ej: Amoxicilina 500 mg',
+                'maxlength': 120,
+            }),
+            'dosis': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ej: 1 comprimido cada 12 horas',
+                'maxlength': 120,
+            }),
+            'duracion_dias': forms.NumberInput(attrs={
+                'class': 'form-control', 'min': 1, 'max': 365,
+            }),
+            'fecha': forms.DateInput(
+                attrs={'class': 'form-control', 'type': 'date'}, format='%Y-%m-%d'
+            ),
+            'observaciones': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 2,
+                'placeholder': 'Indicaciones adicionales (opcional)',
+            }),
+        }
+        labels = {
+            'cita': 'Cita',
+            'medicamento': 'Medicamento',
+            'dosis': 'Dosis',
+            'duracion_dias': 'Duración (días)',
+            'fecha': 'Fecha de la indicación',
+            'observaciones': 'Observaciones',
+        }
+        error_messages = {
+            'cita': {'required': 'Elige la cita a la que corresponde la receta.'},
+            'medicamento': {'required': 'Indica el medicamento recetado.'},
+            'dosis': {'required': 'Indica la dosis.'},
+            'duracion_dias': {
+                'required': 'Indica cuántos días dura el tratamiento.',
+                'invalid': 'La duración debe ser un número entero.',
+            },
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Solo se ofrecen citas que realmente ocurrieron o están programadas.
+        self.fields['cita'].queryset = (
+            Cita.objects.select_related('mascota')
+            .exclude(estado='cancelada')
+            .order_by('-fecha', '-hora')
+        )
+
+    def clean_medicamento(self):
+        medicamento = limpiar_texto(self.cleaned_data.get('medicamento'))
+        if len(medicamento) < 3:
+            raise forms.ValidationError('El medicamento debe tener al menos 3 letras.')
+        return medicamento.title()
+
+    def clean_dosis(self):
+        dosis = limpiar_texto(self.cleaned_data.get('dosis'))
+        if len(dosis) < 2:
+            raise forms.ValidationError('Describe la dosis (ej: 1 comprimido cada 12 horas).')
+        return dosis
+
+    def clean_fecha(self):
+        fecha = self.cleaned_data.get('fecha')
+        cita = self.cleaned_data.get('cita')
+        # La receta no puede ser anterior a la cita que la originó.
+        if cita and fecha and fecha < cita.fecha:
+            raise forms.ValidationError(
+                'La fecha de la receta no puede ser anterior a la fecha de la cita.'
+            )
+        return fecha
 
 
 class AjusteStockForm(forms.Form):
