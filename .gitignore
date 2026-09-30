@@ -18,9 +18,13 @@ env/
 # Django
 *.log
 db.sqlite3
+test_db.sqlite3
 media/
 staticfiles/
 local_settings.py
+
+# Respaldo de datos (contiene datos reales, no va al repo)
+backup_sql/
 
 # Environment variables — NUNCA subir esto a GitHub
 .env

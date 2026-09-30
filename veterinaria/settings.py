@@ -102,10 +102,19 @@ WSGI_APPLICATION = 'veterinaria.wsgi.application'
 # Si no, usar SQLite local para desarrollo.
 database_url = os.getenv('DATABASE_URL', '').strip()
 
-if database_url:
-    db_config = dj_database_url.parse(database_url)
+# Los tests corren siempre sobre SQLite, sin importar la base configurada:
+# así no tocan Supabase ni la base local de desarrollo.
+ES_TEST = 'test' in sys.argv
+if ES_TEST:
     DATABASES = {
-        'default': db_config
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': str(BASE_DIR / 'test_db.sqlite3'),
+        }
+    }
+elif database_url:
+    DATABASES = {
+        'default': dj_database_url.parse(database_url)
     }
 else:
     # Se usa "or" y no el valor por defecto de getenv porque en .env las
@@ -116,12 +125,6 @@ else:
             'NAME': str(BASE_DIR / (os.getenv('DB_NAME') or 'db.sqlite3')),
         }
     }
-
-# ✅ Forzar SQLite para los tests (independiente de Supabase/Postgres)
-DATABASES['default']['TEST'] = {
-    'ENGINE': 'django.db.backends.sqlite3',
-    'NAME': str(BASE_DIR / 'test_db.sqlite3'),
-}
 
 
 # -------------------------------------------------------------------
@@ -236,12 +239,3 @@ LOGGING = {
         'level': 'INFO',
     },
 }
-
-# -------------------------------------------------------------------
-# Forzar SQLite en pruebas (independiente de Supabase/Postgres)
-# -------------------------------------------------------------------
-if 'test' in sys.argv:
-    DATABASES['default'] = {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': str(BASE_DIR / 'test_db.sqlite3'),
-    }
