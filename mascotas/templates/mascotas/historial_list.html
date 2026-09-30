@@ -9,13 +9,6 @@
     {% endif %}
 </div>
 
-{% if messages %}
-    {% for message in messages %}
-        <div class="alert alert-{{ message.tags|default:'info' }}">
-            {{ message }}
-        </div>
-    {% endfor %}
-{% endif %}
 
 {% if historial %}
     <div class="table-responsive">
@@ -43,10 +36,10 @@
                         {% if perms.mascotas.change_historialmedico or perms.mascotas.delete_historialmedico %}
                             <td class="text-nowrap">
                                 {% if perms.mascotas.change_historialmedico %}
-                                    <a href="#" class="btn btn-sm btn-outline-primary">Editar</a>
+                                    <a href="{% url 'mascotas:editar_historial' registro.pk %}" class="btn btn-sm btn-outline-primary">Editar</a>
                                 {% endif %}
                                 {% if perms.mascotas.delete_historialmedico %}
-                                    <a href="#" class="btn btn-sm btn-outline-danger">Eliminar</a>
+                                    <a href="{% url 'mascotas:eliminar_historial' registro.pk %}" class="btn btn-sm btn-outline-danger">Eliminar</a>
                                 {% endif %}
                             </td>
                         {% endif %}

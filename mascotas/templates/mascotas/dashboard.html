@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% load veterinaria_extras %}
+{% block title %}Panel - Clínica Veterinaria{% endblock %}
+
+{% block extra_head %}
+<style>
+    .kpi { display: block; color: inherit; text-decoration: none; height: 100%; }
+    .kpi .valor { font-size: 2rem; font-weight: 600; line-height: 1.1; }
+    .kpi:hover { background: #f8f9fa; }
+    .barra { background: #e9ecef; border-radius: .25rem; height: .6rem; }
+    .barra > div { height: 100%; border-radius: .25rem; background: #0d6efd; }
+    .barra .al_dia { background: #198754; } .barra .pendiente { background: #dc3545; } .barra .alergia { background: #ffc107; }
+    .columnas { display: flex; align-items: flex-end; gap: .75rem; height: 160px; }
+    .columnas .col-barra { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+    .columnas .relleno { width: 100%; max-width: 48px; background: #198754; border-radius: .25rem .25rem 0 0; min-height: 2px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Resumen de la clínica</h1>
+    <span class="text-muted">{{ hoy|date:"l j \d\e F \d\e Y"|capfirst }}</span>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <a class="card kpi" href="{% url 'mascotas:lista' %}"><div class="card-body">
+            <div class="valor">{{ total_mascotas|default:0 }}</div><div class="text-muted">Mascotas registradas</div>
+        </div></a>
+    </div>
+    <div class="col-6 col-lg-3">
+        <a class="card kpi" href="{% url 'mascotas:lista' %}?estado=pendiente"><div class="card-body">
+            <div class="valor text-danger">{{ pendientes_vacuna|default:0 }}</div><div class="text-muted">Pendientes de vacuna</div>
+        </div></a>
+    </div>
+    {% if perms.mascotas.view_cita %}
+        <div class="col-6 col-lg-3">
+            <a class="card kpi" href="{% url 'mascotas:lista_citas' %}?cuando=hoy"><div class="card-body">
+                <div class="valor">{{ citas_hoy|length }}</div><div class="text-muted">Citas hoy ({{ citas_proximas }} próximas)</div>
+            </div></a>
+        </div>
+    {% endif %}
+    {% if perms.mascotas.view_vacuna %}
+        <div class="col-6 col-lg-3">
+            <a class="card kpi" href="{% url 'mascotas:alertas_vacunas' %}"><div class="card-body">
+                <div class="valor text-warning">{{ refuerzos_vencidos }} / {{ refuerzos_proximos }}</div>
+                <div class="text-muted">Refuerzos vencidos / próximos</div>
+            </div></a>
+        </div>
+    {% endif %}
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        {% if perms.mascotas.view_cita %}
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h2 class="h5">Agenda de hoy</h2>
+                    {% for cita in citas_hoy %}
+                        <div class="d-flex justify-content-between border-bottom py-2">
+                            <span><strong>{{ cita.hora|time:"H:i" }}</strong>
+                                <a href="{% url 'mascotas:ficha' cita.mascota.pk %}">{{ cita.mascota.nombre }}</a>
+                                <span class="text-muted small">{{ cita.motivo|default:"Consulta" }}</span></span>
+                            <span class="small">{{ cita.veterinario }}</span>
+                        </div>
+                    {% empty %}
+                        <p class="text-muted mb-0">No hay citas para hoy.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h5">Estado de vacunación</h2>
+                {% for fila in por_estado %}
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between small"><span>{{ fila.nombre }}</span><span>{{ fila.total }}</span></div>
+                        <div class="barra"><div class="{{ fila.clave }}" style="width: {{ fila.porcentaje }}%"></div></div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        {% if perms.mascotas.view_factura %}
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <h2 class="h5">Ingresos pagados (últimos 6 meses)</h2>
+                        <a href="{% url 'mascotas:reporte_facturas' %}" class="small">Exportar CSV</a>
+                    </div>
+                    <div class="d-flex gap-4 mb-3">
+                        <div><div class="text-muted small">Este mes</div><div class="h5 mb-0 text-success">{{ ingreso_mes|clp }}</div></div>
+                        <div><div class="text-muted small">Por cobrar</div><div class="h5 mb-0 text-danger">{{ por_cobrar|clp }}</div></div>
+                    </div>
+                    <div class="columnas" role="img" aria-label="Ingresos por mes">
+                        {% for mes in ingresos %}
+                            <div class="col-barra" title="{{ mes.etiqueta }}: {{ mes.total|clp }}">
+                                <div class="relleno" style="height: {{ mes.porcentaje }}%"></div>
+                                <div class="small text-muted mt-1">{{ mes.etiqueta }}</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <h2 class="h5">Mascotas por especie</h2>
+                    <a href="{% url 'mascotas:reporte_mascotas' %}" class="small">Exportar CSV</a>
+                </div>
+                {% for fila in por_especie %}
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between small"><span>{{ fila.especie }}</span><span>{{ fila.total }}</span></div>
+                        <div class="barra"><div style="width: {{ fila.porcentaje }}%"></div></div>
+                    </div>
+                {% empty %}
+                    <p class="text-muted mb-0">Aún no hay mascotas registradas.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

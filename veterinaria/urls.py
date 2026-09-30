@@ -12,5 +12,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('mascotas/', include('mascotas.urls')),
     path('accounts/', include('django.contrib.auth.urls')),
-    path('', RedirectView.as_view(pattern_name='mascotas:lista', permanent=False)),
+    path('', RedirectView.as_view(pattern_name='mascotas:dashboard', permanent=False)),
 ]

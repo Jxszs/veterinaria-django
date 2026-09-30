@@ -82,6 +82,121 @@ para que la clínica gestione a sus mascotas/pacientes.
 - `CitaAdmin`, `HistorialMedicoAdmin`, `VacunaAdmin` registrados en
   `mascotas/admin.py` con búsqueda, filtros, ordering y date_hierarchy.
 
+## Funcionalidades avanzadas — Joel (PUNTO 2)
+
+### JO1 — Dueños y CRUD completo
+
+- **CRUD de dueños** (`/mascotas/duenos/`): listar con buscador (nombre, correo
+  o usuario), crear, editar y eliminar. Cada dueño se asocia a un `User`.
+  - `DuenoForm` valida: un usuario solo puede tener un perfil de dueño, nombre
+    solo con letras, teléfonos de 8 a 15 dígitos (con `+` opcional) y que exista
+    al menos un medio de contacto (correo, teléfono o WhatsApp).
+  - Al eliminar un dueño sus mascotas no se borran (quedan sin dueño, `SET_NULL`).
+- **Mascota con dueño y raza** en el formulario web (antes solo existían en el modelo).
+- **Historial médico y vacunas con CRUD completo**: se agregaron editar y
+  eliminar (los botones antes apuntaban a `#`). El historial no acepta fechas
+  futuras y exige al menos diagnóstico o tratamiento.
+- **`mascotas/permisos.py`**: una sola regla de acceso por objeto para toda la app.
+  El personal (superusuario, grupos Veterinarios/Administradores) ve todo; un
+  cliente (usuario con perfil de dueño) ve solo lo de sus mascotas. Editar o
+  eliminar un registro ajeno devuelve 404.
+- **Ayudantes `_guardar_formulario` y `_confirmar_eliminacion`** en `views.py`:
+  aplican el mismo `try/except DatabaseError` + mensajes claros en todas las
+  vistas nuevas, sin repetir código.
+- **Plantillas**: barra de navegación con enlaces según permisos, include
+  `_campos_form.html` que ahora también muestra errores generales del
+  formulario, y se quitó el doble mensaje que salía en las listas.
+
+### JO2 — Citas avanzadas y ficha con línea de tiempo
+
+- **Validaciones de `CitaForm`**:
+  - No se puede programar ni reprogramar una cita en una fecha u hora pasada
+    (editar una cita antigua sin mover la fecha sí se permite, por ejemplo para
+    marcarla como finalizada).
+  - Solo dentro del horario de atención (`HORA_APERTURA`–`HORA_CIERRE`, 09:00–20:00).
+  - Sin choques: el mismo veterinario o la misma mascota no pueden tener dos
+    citas a la misma fecha y hora (las canceladas no ocupan horario).
+- **Cancelar cita** (`POST /mascotas/citas/<id>/cancelar/`): cambia el estado a
+  "cancelada" en vez de borrarla, así queda en el historial. Solo acepta POST
+  con token CSRF y solo cancela citas programadas o en curso.
+- **Filtros en la lista de citas**: por mascota, por estado y por momento
+  (hoy, próximas, pasadas).
+- **Ficha de la mascota** (`/mascotas/<id>/`): datos, dueño, estado de
+  vacunación, próximas citas y una **línea de tiempo** que junta citas,
+  vacunas e historial médico en orden cronológico. Desde la ficha se puede
+  agregar una cita, vacuna o registro con la mascota ya elegida (`?mascota=<id>`).
+  Un cliente solo puede abrir la ficha de sus mascotas (otra da 404).
+- Los campos de fecha ahora usan formato `AAAA-MM-DD`, para que al **editar**
+  el navegador muestre la fecha guardada (antes el campo quedaba vacío).
+
+### JO3 — Alertas de vacunación por correo y carnet PDF
+
+- **Estado de la dosis** en el modelo `Vacuna` (`estado_dosis`,
+  `dias_para_refuerzo`, `plazo_refuerzo`): vencida, próxima (dentro de
+  `DIAS_AVISO_VACUNA` = 30 días), al día o sin refuerzo. La lista de vacunas
+  lo muestra con etiquetas de color.
+- **Página de alertas** (`/mascotas/vacunas/alertas/`): refuerzos vencidos,
+  refuerzos próximos y mascotas pendientes sin ninguna vacuna. Solo cuenta la
+  dosis más reciente de cada tipo (si ya se puso el refuerzo, no alerta) y
+  excluye mascotas alérgicas. Un cliente solo ve las alertas de sus mascotas.
+- **Recordatorios por correo**, con la misma lógica en `mascotas/alertas.py`:
+  - Botón "Enviar recordatorios por correo" (solo POST + CSRF, requiere el
+    permiso personalizado `mascotas.manage_vacunas`).
+  - Comando `python manage.py enviar_alertas_vacunas [--simular] [--dias N]`,
+    pensado para programarse una vez al día.
+  - Campo nuevo `Vacuna.alerta_enviada_el` (migración `0007`) para no repetir
+    el correo; si se cambia la próxima dosis, el aviso se vuelve a enviar.
+  - La configuración SMTP se lee desde `.env` (`EMAIL_HOST`, `EMAIL_PORT`,
+    `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`,
+    `DEFAULT_FROM_EMAIL`). **Sin `EMAIL_HOST_PASSWORD` los correos se muestran
+    en la consola**, así se puede probar sin cuenta de correo. Los fallos de
+    envío se capturan con `try/except` y se informan con un mensaje claro.
+- **Validaciones de `VacunaForm`**: sin fechas futuras, la próxima dosis debe
+  ser posterior a la aplicación, no se puede vacunar a una mascota marcada
+  como alérgica, y el lote se guarda en mayúsculas. Al registrar una vacuna la
+  mascota queda marcada como vacunada.
+- **Carnet de vacunación en PDF** (`/mascotas/<id>/carnet.pdf`, botón en la
+  ficha) generado con ReportLab (`mascotas/reportes.py`). Se agregó
+  `reportlab` a `requirements.txt`.
+
+### JO4 — Facturación
+
+- **Modelos nuevos** (migración `0008`):
+  - `Factura`: dueño (FK, `PROTECT`: no se puede borrar un dueño con facturas),
+    mascota y cita opcionales (FK), fecha, estado (pendiente / pagada /
+    anulada), método de pago, fecha de pago y observaciones. El número se
+    muestra como `F-000123`.
+  - `DetalleFactura`: líneas de la factura (descripción, cantidad 1–999,
+    precio unitario neto en pesos). El neto, el IVA (19 %) y el total se
+    **calculan** a partir de las líneas; no se escriben a mano.
+- **Formulario con varias líneas** (`inlineformset_factory`): mínimo una línea,
+  las filas vacías se ignoran, y la factura con sus líneas se guarda dentro de
+  `transaction.atomic()` (si algo falla no queda una factura a medias).
+- **Validaciones**: la mascota debe ser del dueño elegido, la cita debe ser de
+  esa mascota, sin fecha futura y una factura pagada exige método de pago.
+- **Flujo de estados**: "Registrar pago" y "Anular" (solo POST + CSRF). Una
+  factura anulada no se edita, y solo se pueden eliminar facturas anuladas.
+- **Vistas**: lista con filtros (dueño/mascota, estado, mes) y totales por cobrar
+  y pagados, detalle imprimible, crear/editar. Un cliente solo ve sus facturas.
+- **Filtro de plantilla `clp`** (`mascotas/templatetags/veterinaria_extras.py`):
+  muestra los montos como `$15.000`.
+- **Admin** de `Factura` con las líneas de detalle en la misma pantalla.
+
+### JO5 — Dashboard y reportes
+
+- **Panel de inicio** (`/mascotas/panel/`, ahora es la página que se abre al
+  iniciar sesión): total de mascotas, pendientes de vacuna, citas de hoy y
+  próximas, refuerzos vencidos/próximos, agenda del día, gráfico de barras
+  del estado de vacunación y de mascotas por especie.
+- **Ingresos**: pagado en el mes, total por cobrar y barras de los últimos 6
+  meses. Este bloque solo aparece a quien tiene el permiso `view_factura`.
+- Todo el panel usa `filtrar_por_dueno`: un cliente ve solo sus números.
+- **Reportes CSV para Excel** (separador `;` y BOM UTF-8 para tildes y ñ):
+  - `/mascotas/reportes/mascotas.csv`: respeta los filtros de la lista
+    (nombre, especie, estado) e incluye dueño, correo, n° de vacunas y citas.
+  - `/mascotas/reportes/facturas.csv?mes=AAAA-MM`: número, fecha, dueño,
+    estado, método de pago, neto, IVA y total.
+
 ## Cómo correrlo
 
 ```bash

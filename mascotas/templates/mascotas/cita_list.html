@@ -9,14 +9,41 @@
     {% endif %}
 </div>
 
-{% if messages %}
-    {% for message in messages %}
-        <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    {% endfor %}
-{% endif %}
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label mb-1" for="q">Buscar por mascota</label>
+                <input type="text" id="q" name="q" value="{{ query }}" class="form-control" placeholder="Ej: Firulais">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1" for="estado">Estado</label>
+                <select id="estado" name="estado" class="form-select">
+                    <option value="">Todos</option>
+                    {% for valor, texto in estados %}
+                        <option value="{{ valor }}" {% if valor == estado_seleccionado %}selected{% endif %}>{{ texto }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1" for="cuando">Cuándo</label>
+                <select id="cuando" name="cuando" class="form-select">
+                    <option value="">Todas</option>
+                    <option value="hoy" {% if cuando_seleccionado == 'hoy' %}selected{% endif %}>Hoy</option>
+                    <option value="proximas" {% if cuando_seleccionado == 'proximas' %}selected{% endif %}>Próximas</option>
+                    <option value="pasadas" {% if cuando_seleccionado == 'pasadas' %}selected{% endif %}>Pasadas</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary">Filtrar</button>
+            </div>
+        </form>
+        {% if query or estado_seleccionado or cuando_seleccionado %}
+            <a href="{% url 'mascotas:lista_citas' %}" class="d-inline-block mt-2 small">Limpiar filtros</a>
+        {% endif %}
+    </div>
+</div>
 
 {% if citas %}
     <div class="table-responsive">
@@ -37,7 +64,7 @@
             <tbody>
                 {% for cita in citas %}
                     <tr>
-                        <td>{{ cita.mascota.nombre }}</td>
+                        <td><a href="{% url 'mascotas:ficha' cita.mascota.pk %}">{{ cita.mascota.nombre }}</a></td>
                         <td>{{ cita.veterinario }}</td>
                         <td>{{ cita.fecha|date:"d/m/Y" }}</td>
                         <td>{{ cita.hora|time:"H:i" }}</td>
@@ -57,6 +84,14 @@
                             <td class="text-nowrap">
                                 {% if perms.mascotas.change_cita %}
                                     <a href="{% url 'mascotas:editar_cita' cita.pk %}" class="btn btn-sm btn-outline-primary">Editar</a>
+                                    {% if cita.estado == 'programada' or cita.estado == 'en_curso' %}
+                                        <form method="post" action="{% url 'mascotas:cancelar_cita' cita.pk %}" class="d-inline"
+                                              onsubmit="return confirm('¿Cancelar la cita de {{ cita.mascota.nombre|escapejs }}?');">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning">Cancelar</button>
+                                        </form>
+                                    {% endif %}
                                 {% endif %}
                                 {% if perms.mascotas.delete_cita %}
                                     <a href="{% url 'mascotas:eliminar_cita' cita.pk %}" class="btn btn-sm btn-outline-danger">Eliminar</a>
@@ -73,6 +108,6 @@
         </table>
     </div>
 {% else %}
-    <div class="alert alert-info">No hay citas registradas.</div>
+    <div class="alert alert-info">No hay citas que coincidan con el filtro.</div>
 {% endif %}
 {% endblock %}

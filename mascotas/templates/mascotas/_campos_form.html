@@ -1,0 +1,20 @@
+{% comment %}
+    Campos de un formulario con sus errores (JO1).
+    Muestra también los errores generales (non_field_errors), que antes no se veían
+    en pantalla, por ejemplo "vacunado y alérgico a la vez".
+{% endcomment %}
+{% if form.non_field_errors %}
+    <div class="alert alert-danger py-2">
+        {% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+    </div>
+{% endif %}
+{% for field in form %}
+    <div class="mb-3">
+        <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+        {% if field.errors %}
+            <div class="text-danger small">{{ field.errors|striptags }}</div>
+        {% endif %}
+    </div>
+{% endfor %}

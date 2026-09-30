@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}{% if object %}Editar factura{% else %}Nueva factura{% endif %}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card">
+            <div class="card-body">
+                <h1 class="h4 mb-3">{% if object %}Editar factura {{ object.numero }}{% else %}Nueva factura{% endif %}</h1>
+                <form method="post" novalidate>
+                    {% csrf_token %}
+                    <div class="row">
+                        {% if form.non_field_errors %}
+                            <div class="col-12"><div class="alert alert-danger py-2">{{ form.non_field_errors|striptags }}</div></div>
+                        {% endif %}
+                        {% for field in form %}
+                            <div class="{% if field.name == 'observaciones' %}col-12{% else %}col-md-6{% endif %} mb-3">
+                                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                {{ field }}
+                                {% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+
+                    <h2 class="h5 mt-2">Detalle</h2>
+                    <p class="small text-muted">Precios netos en pesos, sin IVA. Deja en blanco las filas que no uses.</p>
+                    {{ formset.management_form }}
+                    {% if formset.non_form_errors %}
+                        <div class="alert alert-danger py-2">{{ formset.non_form_errors|striptags }}</div>
+                    {% endif %}
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead><tr><th>Descripción</th><th style="width:8rem">Cantidad</th><th style="width:12rem">Precio unitario</th><th style="width:6rem">Quitar</th></tr></thead>
+                            <tbody>
+                                {% for linea in formset %}
+                                    <tr>
+                                        <td>{{ linea.id }}{{ linea.descripcion }}
+                                            {% if linea.descripcion.errors %}<div class="text-danger small">{{ linea.descripcion.errors|striptags }}</div>{% endif %}</td>
+                                        <td>{{ linea.cantidad }}
+                                            {% if linea.cantidad.errors %}<div class="text-danger small">{{ linea.cantidad.errors|striptags }}</div>{% endif %}</td>
+                                        <td>{{ linea.precio_unitario }}
+                                            {% if linea.precio_unitario.errors %}<div class="text-danger small">{{ linea.precio_unitario.errors|striptags }}</div>{% endif %}</td>
+                                        <td class="text-center">{% if linea.instance.pk %}{{ linea.DELETE }}{% endif %}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success">Guardar factura</button>
+                        <a href="{% if object %}{% url 'mascotas:detalle_factura' object.pk %}{% else %}{% url 'mascotas:lista_facturas' %}{% endif %}" class="btn btn-secondary">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

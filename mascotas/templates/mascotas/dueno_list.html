@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Dueños - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Dueños registrados</h1>
+    {% if perms.mascotas.add_dueño %}
+        <a href="{% url 'mascotas:crear_dueno' %}" class="btn btn-success">+ Nuevo dueño</a>
+    {% endif %}
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-10">
+                <label class="form-label mb-1" for="q">Buscar por nombre, correo o usuario</label>
+                <input type="text" id="q" name="q" value="{{ query }}" class="form-control" placeholder="Ej: González">
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary">Buscar</button>
+            </div>
+        </form>
+        {% if query %}<a href="{% url 'mascotas:lista_duenos' %}" class="d-inline-block mt-2 small">Limpiar búsqueda</a>{% endif %}
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered align-middle bg-white">
+        <thead class="table-dark">
+            <tr>
+                <th>Nombre</th>
+                <th>Usuario</th>
+                <th>Contacto</th>
+                <th>Mascotas</th>
+                {% if perms.mascotas.change_dueño or perms.mascotas.delete_dueño %}<th>Acciones</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for dueno in duenos %}
+                <tr>
+                    <td>{{ dueno.nombre }}</td>
+                    <td>{{ dueno.user.get_username }}</td>
+                    <td class="small">
+                        {% if dueno.email %}<div>✉️ {{ dueno.email }}</div>{% endif %}
+                        {% if dueno.telefono %}<div>📞 {{ dueno.telefono }}</div>{% endif %}
+                        {% if dueno.whatsapp %}<div>💬 {{ dueno.whatsapp }}</div>{% endif %}
+                    </td>
+                    <td>{{ dueno.total_mascotas }}</td>
+                    {% if perms.mascotas.change_dueño or perms.mascotas.delete_dueño %}
+                        <td class="text-nowrap">
+                            {% if perms.mascotas.change_dueño %}
+                                <a href="{% url 'mascotas:editar_dueno' dueno.pk %}" class="btn btn-sm btn-outline-primary">Editar</a>
+                            {% endif %}
+                            {% if perms.mascotas.delete_dueño %}
+                                <a href="{% url 'mascotas:eliminar_dueno' dueno.pk %}" class="btn btn-sm btn-outline-danger">Eliminar</a>
+                            {% endif %}
+                        </td>
+                    {% endif %}
+                </tr>
+            {% empty %}
+                <tr><td colspan="5" class="text-center text-muted py-4">No hay dueños registrados.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

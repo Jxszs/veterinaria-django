@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% block title %}{{ mascota.nombre }} - Ficha clínica{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Línea de tiempo vertical (JO2) */
+    .timeline { list-style: none; padding-left: 0; margin: 0; position: relative; }
+    .timeline::before { content: ""; position: absolute; left: 11px; top: 4px; bottom: 4px; width: 2px; background: #dee2e6; }
+    .timeline li { position: relative; padding: 0 0 1.25rem 2.25rem; }
+    .timeline li::before { content: ""; position: absolute; left: 4px; top: 6px; width: 16px; height: 16px;
+                           border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 1px #adb5bd; }
+    .timeline li.cita::before { background: #0d6efd; }
+    .timeline li.vacuna::before { background: #198754; }
+    .timeline li.historial::before { background: #6f42c1; }
+    .timeline .fecha { font-size: .85rem; color: #6c757d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <a href="{% url 'mascotas:lista' %}" class="small">← Volver a mascotas</a>
+        <h1 class="h3 mb-0 mt-1">{{ mascota.nombre }}</h1>
+        <div class="text-muted">
+            {{ mascota.especie }}{% if mascota.raza %} ({{ mascota.raza }}){% endif %},
+            {{ mascota.edad }} año{{ mascota.edad|pluralize }}
+        </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        {% if perms.mascotas.add_cita %}
+            <a href="{% url 'mascotas:crear_cita' %}?mascota={{ mascota.pk }}" class="btn btn-sm btn-outline-primary">+ Cita</a>
+        {% endif %}
+        {% if perms.mascotas.add_vacuna %}
+            <a href="{% url 'mascotas:crear_vacuna' %}?mascota={{ mascota.pk }}" class="btn btn-sm btn-outline-success">+ Vacuna</a>
+        {% endif %}
+        {% if perms.mascotas.add_historialmedico %}
+            <a href="{% url 'mascotas:crear_historial' %}?mascota={{ mascota.pk }}" class="btn btn-sm btn-outline-secondary">+ Registro clínico</a>
+        {% endif %}
+        {% if perms.mascotas.add_factura and mascota.dueno %}
+            <a href="{% url 'mascotas:crear_factura' %}?mascota={{ mascota.pk }}" class="btn btn-sm btn-outline-dark">+ Factura</a>
+        {% endif %}
+        <a href="{% url 'mascotas:carnet_vacunas' mascota.pk %}" class="btn btn-sm btn-dark">📄 Carnet de vacunas (PDF)</a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h2 class="h6 text-muted">Estado de vacunación</h2>
+                {% if mascota.estado_vacunacion == 'alergia' %}
+                    <span class="badge badge-alergia">🟡 Alérgica a las vacunas</span>
+                {% elif mascota.estado_vacunacion == 'al_dia' %}
+                    <span class="badge badge-al-dia">🟢 Al día</span>
+                {% else %}
+                    <span class="badge badge-pendiente">🔴 Pendiente</span>
+                {% endif %}
+
+                <h2 class="h6 text-muted mt-3">Dueño</h2>
+                {% if mascota.dueno %}
+                    <div>{{ mascota.dueno.nombre }}</div>
+                    {% if mascota.dueno.email %}<div class="small">✉️ {{ mascota.dueno.email }}</div>{% endif %}
+                    {% if mascota.dueno.telefono %}<div class="small">📞 {{ mascota.dueno.telefono }}</div>{% endif %}
+                    {% if mascota.dueno.whatsapp %}<div class="small">💬 {{ mascota.dueno.whatsapp }}</div>{% endif %}
+                {% else %}
+                    <div class="text-muted">Sin dueño asignado</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h6 text-muted">Próximas citas</h2>
+                {% for cita in proximas_citas %}
+                    <div class="border-bottom py-2">
+                        <div class="fw-semibold">{{ cita.fecha|date:"d/m/Y" }} — {{ cita.hora|time:"H:i" }}</div>
+                        <div class="small">{{ cita.motivo|default:"Consulta" }} con {{ cita.veterinario }}</div>
+                    </div>
+                {% empty %}
+                    <p class="text-muted mb-0">No tiene citas programadas.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="h5 mb-3">Línea de tiempo</h2>
+                <p class="small text-muted">
+                    <span class="text-primary">●</span> Citas
+                    <span class="text-success ms-2">●</span> Vacunas
+                    <span style="color:#6f42c1" class="ms-2">●</span> Historial médico
+                </p>
+                {% if eventos %}
+                    <ul class="timeline">
+                        {% for evento in eventos %}
+                            <li class="{{ evento.tipo }}">
+                                <div class="fecha">
+                                    {{ evento.fecha|date:"d/m/Y" }}{% if evento.hora %}, {{ evento.hora|time:"H:i" }} h{% endif %}
+                                </div>
+                                <div class="fw-semibold">{{ evento.icono }} {{ evento.titulo }}</div>
+                                {% if evento.detalle %}<div class="small text-muted">{{ evento.detalle }}</div>{% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-muted mb-0">Todavía no hay citas, vacunas ni registros clínicos para {{ mascota.nombre }}.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

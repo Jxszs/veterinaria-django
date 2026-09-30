@@ -17,11 +17,43 @@
         .table-alergia { background-color: #fff3cd !important; }
         .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
     </style>
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
       <div class="container">
-          <a class="navbar-brand" href="{% url 'mascotas:lista' %}">🐾 Clínica Veterinaria</a>
+          <a class="navbar-brand" href="{% url 'mascotas:dashboard' %}">🐾 Clínica Veterinaria</a>
+          {% if user.is_authenticated %}
+              <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal"
+                      aria-controls="menuPrincipal" aria-expanded="false" aria-label="Abrir menú">
+                  <span class="navbar-toggler-icon"></span>
+              </button>
+              <div class="collapse navbar-collapse" id="menuPrincipal">
+                  {% with url=request.resolver_match.url_name %}
+                  <ul class="navbar-nav me-auto">
+                      <li class="nav-item"><a class="nav-link {% if url == 'dashboard' %}active{% endif %}" href="{% url 'mascotas:dashboard' %}">Panel</a></li>
+                      <li class="nav-item"><a class="nav-link {% if url == 'lista' or url == 'ficha' %}active{% endif %}" href="{% url 'mascotas:lista' %}">Mascotas</a></li>
+                      {% if perms.mascotas.view_cita %}
+                          <li class="nav-item"><a class="nav-link {% if 'cita' in url %}active{% endif %}" href="{% url 'mascotas:lista_citas' %}">Citas</a></li>
+                      {% endif %}
+                      {% if perms.mascotas.view_vacuna %}
+                          <li class="nav-item"><a class="nav-link {% if 'vacuna' in url and 'alertas' not in url %}active{% endif %}" href="{% url 'mascotas:lista_vacunas' %}">Vacunas</a></li>
+                      {% endif %}
+                      {% if perms.mascotas.view_vacuna %}
+                          <li class="nav-item"><a class="nav-link {% if 'alertas' in url %}active{% endif %}" href="{% url 'mascotas:alertas_vacunas' %}">Alertas</a></li>
+                      {% endif %}
+                      {% if perms.mascotas.view_historialmedico %}
+                          <li class="nav-item"><a class="nav-link {% if 'historial' in url %}active{% endif %}" href="{% url 'mascotas:lista_historial' %}">Historial</a></li>
+                      {% endif %}
+                      {% if perms.mascotas.view_factura %}
+                          <li class="nav-item"><a class="nav-link {% if 'factura' in url %}active{% endif %}" href="{% url 'mascotas:lista_facturas' %}">Facturas</a></li>
+                      {% endif %}
+                      {% if perms.mascotas.view_dueño %}
+                          <li class="nav-item"><a class="nav-link {% if 'dueno' in url %}active{% endif %}" href="{% url 'mascotas:lista_duenos' %}">Dueños</a></li>
+                      {% endif %}
+                  </ul>
+                  {% endwith %}
+          {% endif %}
           <div class="d-flex align-items-center">
                {% if user.is_authenticated %}
                     <span class="text-light me-3">
@@ -49,6 +81,7 @@
                     <a class="btn btn-outline-light btn-sm" href="{% url 'login' %}">Iniciar sesión</a>
                 {% endif %}
             </div>
+          {% if user.is_authenticated %}</div>{% endif %}
         </div>
     </nav>
 
