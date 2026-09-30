@@ -107,10 +107,12 @@ if database_url:
         'default': db_config
     }
 else:
+    # Se usa "or" y no el valor por defecto de getenv porque en .env las
+    # variables pueden existir pero vacías (DB_ENGINE=), y eso rompía la conexión.
     DATABASES = {
         'default': {
-            'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.sqlite3'),
-            'NAME': str(BASE_DIR / os.getenv('DB_NAME', 'db.sqlite3')),
+            'ENGINE': os.getenv('DB_ENGINE') or 'django.db.backends.sqlite3',
+            'NAME': str(BASE_DIR / (os.getenv('DB_NAME') or 'db.sqlite3')),
         }
     }
 
