@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}Alertas de vacunación - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <h1 class="h3 mb-0">Alertas de vacunación</h1>
+        <div class="text-muted small">Refuerzos vencidos o que vencen en los próximos {{ dias_aviso }} días.</div>
+    </div>
+    {% if perms.mascotas.manage_vacunas %}
+        <form method="post" action="{% url 'mascotas:enviar_alertas_vacunas' %}"
+              onsubmit="return confirm('¿Enviar los recordatorios por correo a los dueños?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">✉️ Enviar recordatorios por correo</button>
+        </form>
+    {% endif %}
+</div>
+
+<div class="card mb-4 border-danger">
+    <div class="card-header bg-danger text-white">🔴 Refuerzos vencidos ({{ vencidas|length }})</div>
+    <div class="card-body p-0">
+        {% include 'mascotas/_tabla_alertas.html' with vacunas=vencidas vacio="No hay refuerzos vencidos." %}
+    </div>
+</div>
+
+<div class="card mb-4 border-warning">
+    <div class="card-header bg-warning">🟡 Refuerzos próximos ({{ proximas|length }})</div>
+    <div class="card-body p-0">
+        {% include 'mascotas/_tabla_alertas.html' with vacunas=proximas vacio="No hay refuerzos en los próximos días." %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Mascotas pendientes sin ninguna vacuna registrada ({{ sin_vacunas|length }})</div>
+    <ul class="list-group list-group-flush">
+        {% for mascota in sin_vacunas %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <span>
+                    <a href="{% url 'mascotas:ficha' mascota.pk %}">{{ mascota.nombre }}</a>
+                    <span class="text-muted small">({{ mascota.especie }}{% if mascota.dueno %}, dueño: {{ mascota.dueno.nombre }}{% endif %})</span>
+                </span>
+                {% if perms.mascotas.add_vacuna %}
+                    <a href="{% url 'mascotas:crear_vacuna' %}?mascota={{ mascota.pk }}" class="btn btn-sm btn-outline-success">Registrar vacuna</a>
+                {% endif %}
+            </li>
+        {% empty %}
+            <li class="list-group-item text-muted">Todas las mascotas pendientes tienen al menos una vacuna registrada.</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}

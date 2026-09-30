@@ -5,13 +5,18 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import DatabaseError
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
 from .models import Dueño, Mascota, Cita, HistorialMedico, Vacuna
 from .forms import DuenoForm, MascotaForm, CitaForm, HistorialMedicoForm, VacunaForm
+from .alertas import enviar_recordatorios, mascotas_sin_vacunas, vacunas_con_refuerzo_pendiente
+from .models import DIAS_AVISO_VACUNA
 from .permisos import filtrar_por_dueno
+from .reportes import carnet_vacunas_pdf
 
 
 logger = logging.getLogger(__name__)
@@ -574,6 +579,10 @@ def crear_vacuna(request):
         if form.is_valid():
             try:
                 vacuna = form.save()
+                # Al registrar una vacuna, la mascota pasa a estar vacunada.
+                if not vacuna.mascota.vacunado:
+                    vacuna.mascota.vacunado = True
+                    vacuna.mascota.save(update_fields=['vacunado'])
             except DatabaseError:
                 logger.exception('Error al crear vacuna')
                 messages.error(request, 'No se pudo registrar la vacuna. ' + ERROR_BD)
@@ -608,3 +617,76 @@ def eliminar_vacuna(request, pk):
         request, vacuna, 'mascotas/vacuna_confirm_delete.html', 'mascotas:lista_vacunas',
         f'la vacuna {vacuna.get_tipo_display()} de "{vacuna.mascota.nombre}"',
     )
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Alertas de vacunación y carnet PDF (JO3)
+# ────────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@permission_required('mascotas.view_vacuna', raise_exception=True)
+def alertas_vacunas(request):
+    """
+    Refuerzos vencidos o por vencer y mascotas pendientes sin ninguna vacuna.
+    Un cliente solo ve las alertas de sus mascotas.
+    """
+    contexto = {'vencidas': [], 'proximas': [], 'sin_vacunas': [], 'dias_aviso': DIAS_AVISO_VACUNA}
+    try:
+        pendientes = vacunas_con_refuerzo_pendiente(
+            queryset=filtrar_por_dueno(Vacuna.objects.all(), request.user)
+        )
+        for vacuna in pendientes:
+            clave = 'vencidas' if vacuna.estado_dosis == 'vencida' else 'proximas'
+            contexto[clave].append(vacuna)
+        contexto['sin_vacunas'] = list(mascotas_sin_vacunas(
+            filtrar_por_dueno(Mascota.objects.all(), request.user, ruta='dueno__user')
+        ))
+    except DatabaseError:
+        logger.exception('Error al calcular alertas de vacunas')
+        messages.error(request, 'No se pudieron calcular las alertas. ' + ERROR_BD)
+    return render(request, 'mascotas/alertas_vacunas.html', contexto)
+
+
+@login_required
+@permission_required('mascotas.manage_vacunas', raise_exception=True)
+@require_POST
+def enviar_alertas_vacunas(request):
+    """Envía los recordatorios por correo desde la web (mismo código que el comando)."""
+    try:
+        resumen = enviar_recordatorios()
+    except DatabaseError:
+        logger.exception('Error al enviar recordatorios')
+        messages.error(request, 'No se pudieron enviar los recordatorios. ' + ERROR_BD)
+        return redirect('mascotas:alertas_vacunas')
+    texto = f"Recordatorios enviados: {resumen['enviados']}."
+    if resumen['ya_avisados']:
+        texto += f" {resumen['ya_avisados']} ya habían sido avisados."
+    if resumen['sin_correo']:
+        texto += f" {resumen['sin_correo']} dueño(s) sin correo registrado."
+    messages.success(request, texto)
+    if resumen['errores']:
+        messages.error(
+            request,
+            f"{resumen['errores']} correo(s) no se pudieron enviar. Revisa la configuración de correo en .env.",
+        )
+    return redirect('mascotas:alertas_vacunas')
+
+
+@login_required
+def carnet_vacunas(request, pk):
+    """Descarga el carnet de vacunación de una mascota en PDF."""
+    mascota = get_object_or_404(
+        filtrar_por_dueno(Mascota.objects.select_related('dueno'), request.user, ruta='dueno__user'),
+        pk=pk,
+    )
+    try:
+        pdf = carnet_vacunas_pdf(mascota)
+    except DatabaseError:
+        logger.exception('Error al generar el carnet de la mascota %s', pk)
+        messages.error(request, 'No se pudo generar el carnet. ' + ERROR_BD)
+        return redirect('mascotas:ficha', pk=pk)
+    respuesta = HttpResponse(pdf, content_type='application/pdf')
+    nombre = slugify(mascota.nombre) or 'mascota'
+    respuesta['Content-Disposition'] = f'attachment; filename="carnet-vacunas-{nombre}.pdf"'
+    return respuesta
+

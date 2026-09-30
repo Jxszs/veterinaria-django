@@ -1,0 +1,42 @@
+{% if vacunas %}
+<div class="table-responsive">
+    <table class="table mb-0 align-middle">
+        <thead>
+            <tr>
+                <th>Mascota</th>
+                <th>Vacuna</th>
+                <th>Próxima dosis</th>
+                <th>Dueño</th>
+                <th>Aviso por correo</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for vacuna in vacunas %}
+                <tr>
+                    <td><a href="{% url 'mascotas:ficha' vacuna.mascota.pk %}">{{ vacuna.mascota.nombre }}</a></td>
+                    <td>{{ vacuna.get_tipo_display }}</td>
+                    <td>
+                        {{ vacuna.proxima_dosis|date:"d/m/Y" }}
+                        <div class="small text-muted">{{ vacuna.plazo_refuerzo }}</div>
+                    </td>
+                    <td>
+                        {{ vacuna.mascota.dueno.nombre|default:"Sin dueño" }}
+                        {% if vacuna.mascota.dueno and not vacuna.mascota.dueno.email %}
+                            <div class="small text-danger">Sin correo registrado</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if vacuna.alerta_enviada_el %}
+                            <span class="badge bg-success">Enviado {{ vacuna.alerta_enviada_el|date:"d/m" }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Pendiente</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+    <p class="text-muted m-3">{{ vacio }}</p>
+{% endif %}

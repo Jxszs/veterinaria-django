@@ -11,6 +11,7 @@ urlpatterns = [
     path('<int:pk>/editar/', views.editar_mascota, name='editar'),
     path('<int:pk>/eliminar/', views.eliminar_mascota, name='eliminar'),
     path('<int:pk>/', views.ficha_mascota, name='ficha'),
+    path('<int:pk>/carnet.pdf', views.carnet_vacunas, name='carnet_vacunas'),
 
     # ── Dueños (JO1) ──
     path('duenos/', views.listar_duenos, name='lista_duenos'),
@@ -34,6 +35,8 @@ urlpatterns = [
     # ── Vacunas ──
     path('vacunas/', views.listar_vacunas, name='lista_vacunas'),
     path('vacunas/nueva/', views.crear_vacuna, name='crear_vacuna'),
+    path('vacunas/alertas/', views.alertas_vacunas, name='alertas_vacunas'),
+    path('vacunas/alertas/enviar/', views.enviar_alertas_vacunas, name='enviar_alertas_vacunas'),
     path('vacunas/<int:pk>/editar/', views.editar_vacuna, name='editar_vacuna'),
     path('vacunas/<int:pk>/eliminar/', views.eliminar_vacuna, name='eliminar_vacuna'),
 ]

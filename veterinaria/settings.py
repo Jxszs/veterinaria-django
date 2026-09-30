@@ -200,7 +200,25 @@ if not DEBUG:
 
 
 # -------------------------------------------------------------------
-# Login y logout
+# Correo (JO3: recordatorios de vacunas) — leído desde .env
+# -------------------------------------------------------------------
+# Si hay contraseña SMTP en .env se envían correos reales; si no, se
+# imprimen en la consola (útil para desarrollo y para la demo en vivo).
+EMAIL_HOST = os.getenv('EMAIL_HOST') or 'smtp.gmail.com'
+EMAIL_PORT = int(os.getenv('EMAIL_PORT') or 587)
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = (os.getenv('EMAIL_USE_TLS') or 'True').lower() in ('true', '1', 'si', 'yes')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL') or 'Clínica Veterinaria <no-responder@veterinaria.local>'
+EMAIL_TIMEOUT = 10
+if EMAIL_HOST_PASSWORD:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+
+# -------------------------------------------------------------------
+# Logging
 # -------------------------------------------------------------------
 
 # Logger por defecto para el proyecto

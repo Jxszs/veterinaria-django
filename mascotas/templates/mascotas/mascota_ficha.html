@@ -36,6 +36,7 @@
         {% if perms.mascotas.add_historialmedico %}
             <a href="{% url 'mascotas:crear_historial' %}?mascota={{ mascota.pk }}" class="btn btn-sm btn-outline-secondary">+ Registro clínico</a>
         {% endif %}
+        <a href="{% url 'mascotas:carnet_vacunas' mascota.pk %}" class="btn btn-sm btn-dark">📄 Carnet de vacunas (PDF)</a>
     </div>
 </div>
 

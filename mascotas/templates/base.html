@@ -36,7 +36,10 @@
                           <li class="nav-item"><a class="nav-link {% if 'cita' in url %}active{% endif %}" href="{% url 'mascotas:lista_citas' %}">Citas</a></li>
                       {% endif %}
                       {% if perms.mascotas.view_vacuna %}
-                          <li class="nav-item"><a class="nav-link {% if 'vacuna' in url %}active{% endif %}" href="{% url 'mascotas:lista_vacunas' %}">Vacunas</a></li>
+                          <li class="nav-item"><a class="nav-link {% if 'vacuna' in url and 'alertas' not in url %}active{% endif %}" href="{% url 'mascotas:lista_vacunas' %}">Vacunas</a></li>
+                      {% endif %}
+                      {% if perms.mascotas.view_vacuna %}
+                          <li class="nav-item"><a class="nav-link {% if 'alertas' in url %}active{% endif %}" href="{% url 'mascotas:alertas_vacunas' %}">Alertas</a></li>
                       {% endif %}
                       {% if perms.mascotas.view_historialmedico %}
                           <li class="nav-item"><a class="nav-link {% if 'historial' in url %}active{% endif %}" href="{% url 'mascotas:lista_historial' %}">Historial</a></li>

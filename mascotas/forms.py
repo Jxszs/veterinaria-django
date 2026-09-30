@@ -396,3 +396,46 @@ class VacunaForm(forms.ModelForm):
             'fabricante': 'Fabricante',
             'observaciones': 'Observaciones',
         }
+
+        error_messages = {
+            'mascota': {'required': 'Debes elegir la mascota.'},
+            'tipo': {'required': 'Debes elegir el tipo de vacuna.'},
+            'fecha_aplicacion': {'required': 'Debes ingresar la fecha de aplicación.', 'invalid': 'Fecha no válida.'},
+            'proxima_dosis': {'invalid': 'Fecha no válida.'},
+        }
+
+    def clean_fecha_aplicacion(self):
+        fecha = self.cleaned_data.get('fecha_aplicacion')
+        if fecha and fecha > timezone.localdate():
+            raise forms.ValidationError('No se puede registrar una vacuna con fecha futura.')
+        return fecha
+
+    def clean_lote(self):
+        return limpiar_texto(self.cleaned_data.get('lote')).upper() or None
+
+    def clean_fabricante(self):
+        return limpiar_texto(self.cleaned_data.get('fabricante')) or None
+
+    def clean_observaciones(self):
+        return limpiar_texto(self.cleaned_data.get('observaciones')) or None
+
+    def clean(self):
+        datos = super().clean()
+        mascota = datos.get('mascota')
+        aplicacion, proxima = datos.get('fecha_aplicacion'), datos.get('proxima_dosis')
+        if mascota and mascota.alergico:
+            raise forms.ValidationError(
+                f'{mascota.nombre} está marcada como alérgica a las vacunas; no se puede registrar una vacuna.'
+            )
+        if aplicacion and proxima and proxima <= aplicacion:
+            self.add_error('proxima_dosis', 'La próxima dosis debe ser posterior a la fecha de aplicación.')
+        return datos
+
+    def save(self, commit=True):
+        vacuna = super().save(commit=False)
+        # Si cambia la fecha de la próxima dosis, el recordatorio se vuelve a enviar.
+        if 'proxima_dosis' in self.changed_data:
+            vacuna.alerta_enviada_el = None
+        if commit:
+            vacuna.save()
+        return vacuna

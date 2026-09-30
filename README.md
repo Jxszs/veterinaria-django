@@ -129,6 +129,36 @@ para que la clínica gestione a sus mascotas/pacientes.
 - Los campos de fecha ahora usan formato `AAAA-MM-DD`, para que al **editar**
   el navegador muestre la fecha guardada (antes el campo quedaba vacío).
 
+### JO3 — Alertas de vacunación por correo y carnet PDF
+
+- **Estado de la dosis** en el modelo `Vacuna` (`estado_dosis`,
+  `dias_para_refuerzo`, `plazo_refuerzo`): vencida, próxima (dentro de
+  `DIAS_AVISO_VACUNA` = 30 días), al día o sin refuerzo. La lista de vacunas
+  lo muestra con etiquetas de color.
+- **Página de alertas** (`/mascotas/vacunas/alertas/`): refuerzos vencidos,
+  refuerzos próximos y mascotas pendientes sin ninguna vacuna. Solo cuenta la
+  dosis más reciente de cada tipo (si ya se puso el refuerzo, no alerta) y
+  excluye mascotas alérgicas. Un cliente solo ve las alertas de sus mascotas.
+- **Recordatorios por correo**, con la misma lógica en `mascotas/alertas.py`:
+  - Botón "Enviar recordatorios por correo" (solo POST + CSRF, requiere el
+    permiso personalizado `mascotas.manage_vacunas`).
+  - Comando `python manage.py enviar_alertas_vacunas [--simular] [--dias N]`,
+    pensado para programarse una vez al día.
+  - Campo nuevo `Vacuna.alerta_enviada_el` (migración `0007`) para no repetir
+    el correo; si se cambia la próxima dosis, el aviso se vuelve a enviar.
+  - La configuración SMTP se lee desde `.env` (`EMAIL_HOST`, `EMAIL_PORT`,
+    `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`,
+    `DEFAULT_FROM_EMAIL`). **Sin `EMAIL_HOST_PASSWORD` los correos se muestran
+    en la consola**, así se puede probar sin cuenta de correo. Los fallos de
+    envío se capturan con `try/except` y se informan con un mensaje claro.
+- **Validaciones de `VacunaForm`**: sin fechas futuras, la próxima dosis debe
+  ser posterior a la aplicación, no se puede vacunar a una mascota marcada
+  como alérgica, y el lote se guarda en mayúsculas. Al registrar una vacuna la
+  mascota queda marcada como vacunada.
+- **Carnet de vacunación en PDF** (`/mascotas/<id>/carnet.pdf`, botón en la
+  ficha) generado con ReportLab (`mascotas/reportes.py`). Se agregó
+  `reportlab` a `requirements.txt`.
+
 ## Cómo correrlo
 
 ```bash

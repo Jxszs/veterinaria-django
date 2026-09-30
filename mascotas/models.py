@@ -2,6 +2,10 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone
+
+# Días de anticipación con que se avisa una dosis de refuerzo (JO3).
+DIAS_AVISO_VACUNA = 30
 
 
 class Dueño(models.Model):
@@ -258,9 +262,52 @@ class Vacuna(models.Model):
         null=True,
         verbose_name='Observaciones',
     )
+    alerta_enviada_el = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name='Alerta enviada el',
+        help_text='Fecha en que se envió el recordatorio por correo de la próxima dosis.',
+    )
 
     def __str__(self):
-        return f"Vacuna: {self.mascota.nombre} - {self.tipo} ({self.fecha_aplicacion})"
+        return f"Vacuna: {self.mascota.nombre} - {self.get_tipo_display()} ({self.fecha_aplicacion})"
+
+    @property
+    def dias_para_refuerzo(self):
+        """Días que faltan para la próxima dosis (negativo si ya venció)."""
+        if not self.proxima_dosis:
+            return None
+        return (self.proxima_dosis - timezone.localdate()).days
+
+    @property
+    def plazo_refuerzo(self):
+        """Texto amigable del plazo: 'venció hace 3 día(s)', 'vence hoy', 'vence en 10 día(s)'."""
+        dias = self.dias_para_refuerzo
+        if dias is None:
+            return 'sin refuerzo registrado'
+        if dias < 0:
+            return f'venció hace {-dias} día(s)'
+        if dias == 0:
+            return 'vence hoy'
+        return f'vence en {dias} día(s)'
+
+    @property
+    def estado_dosis(self):
+        """
+        Estado del refuerzo (JO3):
+          - 'vencida': la próxima dosis ya pasó.
+          - 'proxima': vence dentro de DIAS_AVISO_VACUNA días.
+          - 'al_dia': la próxima dosis está lejos.
+          - 'sin_refuerzo': no tiene próxima dosis registrada.
+        """
+        dias = self.dias_para_refuerzo
+        if dias is None:
+            return 'sin_refuerzo'
+        if dias < 0:
+            return 'vencida'
+        if dias <= DIAS_AVISO_VACUNA:
+            return 'proxima'
+        return 'al_dia'
 
     class Meta:
         ordering = ['-fecha_aplicacion']
