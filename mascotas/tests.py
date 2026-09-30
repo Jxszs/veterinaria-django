@@ -148,15 +148,33 @@ class SetupGruposCommandTest(TestCase):
 
         veterinarios = Group.objects.get(name='Veterinarios')
         administradores = Group.objects.get(name='Administradores')
+        clientes = Group.objects.get(name='Clientes')
 
-        self.assertEqual(
-            set(veterinarios.permissions.values_list('codename', flat=True)),
-            {'view_mascota'},
-        )
-        self.assertEqual(
-            set(administradores.permissions.values_list('codename', flat=True)),
-            {'view_mascota', 'add_mascota', 'change_mascota', 'delete_mascota'},
-        )
+        permisos_vet = set(veterinarios.permissions.values_list('codename', flat=True))
+        permisos_admin = set(administradores.permissions.values_list('codename', flat=True))
+        permisos_cli = set(clientes.permissions.values_list('codename', flat=True))
+
+        # GA2: los veterinarios ven mascotas pero no las crean ni eliminan,
+        # y sí gestionan citas y vacunas.
+        self.assertIn('view_mascota', permisos_vet)
+        self.assertNotIn('add_mascota', permisos_vet)
+        self.assertNotIn('delete_mascota', permisos_vet)
+        self.assertIn('add_cita', permisos_vet)
+        self.assertIn('manage_vacunas', permisos_vet)
+        # Los administradores tienen el CRUD completo de mascotas y facturas.
+        self.assertTrue({'view_mascota', 'add_mascota', 'change_mascota', 'delete_mascota',
+                         'add_factura', 'delete_factura'} <= permisos_admin)
+        # Los clientes solo leen.
+        self.assertTrue(all(codename.startswith('view_') for codename in permisos_cli))
+
+    def test_comando_es_idempotente(self):
+        from django.core.management import call_command
+
+        call_command('setup_grupos')
+        call_command('setup_grupos')
+        self.assertEqual(Group.objects.filter(name='Veterinarios').count(), 1)
+
+
 class MascotaValidacionTest(TestCase):
     """Pruebas de validación y sanitización del formulario."""
 

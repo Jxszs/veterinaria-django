@@ -107,6 +107,16 @@
             </div>
         {% endif %}
 
+        {% if perms.mascotas.view_producto %}
+            <a class="card kpi mb-4" href="{% url 'mascotas:inventario' %}?semaforo=rojo"><div class="card-body d-flex justify-content-between align-items-center">
+                <div><h2 class="h5 mb-1">Inventario</h2><div class="text-muted small">Productos que requieren reposición o están por vencer</div></div>
+                <div class="text-end">
+                    <div><span class="badge bg-danger">{{ productos_rojo }} en rojo</span></div>
+                    <div><span class="badge bg-warning text-dark">{{ productos_amarillo }} en amarillo</span></div>
+                </div>
+            </div></a>
+        {% endif %}
+
         <div class="card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start">

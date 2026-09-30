@@ -48,6 +48,9 @@
                       {% if perms.mascotas.view_factura %}
                           <li class="nav-item"><a class="nav-link {% if 'factura' in url %}active{% endif %}" href="{% url 'mascotas:lista_facturas' %}">Facturas</a></li>
                       {% endif %}
+                      {% if perms.mascotas.view_producto %}
+                          <li class="nav-item"><a class="nav-link {% if url == 'inventario' or 'producto' in url %}active{% endif %}" href="{% url 'mascotas:inventario' %}">Inventario</a></li>
+                      {% endif %}
                       {% if perms.mascotas.view_dueño %}
                           <li class="nav-item"><a class="nav-link {% if 'dueno' in url %}active{% endif %}" href="{% url 'mascotas:lista_duenos' %}">Dueños</a></li>
                       {% endif %}
@@ -58,10 +61,12 @@
                {% if user.is_authenticated %}
                     <span class="text-light me-3">
                         Hola, {{ user.get_username }}
-                        {% if perms.mascotas.add_mascota %}
+                        {% if rol_usuario == 'Administrador' %}
                             <span class="badge bg-primary ms-1">Administrador</span>
-                        {% elif perms.mascotas.view_mascota %}
+                        {% elif rol_usuario == 'Veterinario' %}
                             <span class="badge bg-secondary ms-1">Veterinario</span>
+                        {% elif rol_usuario == 'Cliente' %}
+                            <span class="badge bg-info text-dark ms-1">Cliente</span>
                         {% else %}
                             <span class="badge bg-light text-dark ms-1">Sin rol asignado</span>
                         {% endif %}

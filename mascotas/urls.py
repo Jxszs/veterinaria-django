@@ -52,4 +52,11 @@ urlpatterns = [
     path('panel/', views.dashboard, name='dashboard'),
     path('reportes/mascotas.csv', views.reporte_mascotas_csv, name='reporte_mascotas'),
     path('reportes/facturas.csv', views.reporte_facturas_csv, name='reporte_facturas'),
+
+    # ── Inventario con semáforo (GA3) ──
+    path('inventario/', views.listar_inventario, name='inventario'),
+    path('inventario/nuevo/', views.crear_producto, name='crear_producto'),
+    path('inventario/<int:pk>/editar/', views.editar_producto, name='editar_producto'),
+    path('inventario/<int:pk>/eliminar/', views.eliminar_producto, name='eliminar_producto'),
+    path('inventario/<int:pk>/stock/', views.ajustar_stock, name='ajustar_stock'),
 ]

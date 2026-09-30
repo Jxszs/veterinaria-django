@@ -1,86 +1,147 @@
-# Sistema de Pacientes - Clínica Veterinaria
+# Sistema de Gestión - Clínica Veterinaria (Caso 5)
 
-Proyecto Django que resuelve el **Caso 5** de la evaluación: un sistema web
-para que la clínica gestione a sus mascotas/pacientes.
+Proyecto Django de la Evaluación de Programación Back End. Es un sistema web
+para que una clínica veterinaria gestione mascotas, dueños, citas, vacunas,
+historial médico, facturación e inventario, con permisos por rol y base de
+datos PostgreSQL en Supabase.
 
-## Qué implementa
+**Integrantes:** Jesús Torres, Joel, Gabriel.
 
-- **Modelo `Mascota`** (`mascotas/models.py`): 4 campos base, con los 4 tipos
-  de dato del repaso de conceptos del curso — `nombre` (CharField), `especie`
-  (CharField), `edad` (IntegerField) y `vacunado` (BooleanField) — ordenado
-  alfabéticamente por nombre. Se suma un 5to campo `alergico` (BooleanField)
-  para representar el tercer estado de vacunación que pide el enunciado del
-  Caso 5 ("alergia a vacunas") sin romper la combinación de tipos exigida en
-  los 4 campos base. La propiedad `estado_vacunacion` combina ambos booleanos
-  en `'al_dia'`, `'pendiente'` o `'alergia'`.
-- **Modelo `Dueño`** (`mascotas/models.py`): incluye FK a `User` (el usuario
-  registrado del sistema) y datos de contacto del dueño (nombre, whatsapp,
-  teléfono, dirección, email). Permite vincular cada mascota a un dueño
-  registrado.
-- **Mascota mejorada (J7)**: ahora cada mascota tiene FK a `Dueño` (`dueno`,
-  nullable) y campo `raza` (nullable). Así se puede registrar al dueño de la
-  mascota y su raza sin romper registros existentes.
-- **Lista web** de todas las mascotas, con:
-  - Colores según estado: verde (al día), rojo (pendiente de vacuna),
-    amarillo (alergia — no se le puede vacunar).
-  - Buscador por nombre (para cuando llama el dueño).
-  - Filtro por especie.
-  - Filtro por estado de vacunación (al día / pendiente / alergia).
-  - Aviso/filtro rápido de "mascotas pendientes de vacuna" (no cuenta a las
-    alérgicas, porque a esas no corresponde vacunarlas).
-- **Alta, edición y eliminación** de mascotas mediante formularios web (sin
-  tocar código), disponibles solo para el grupo **Administradores**.
-- **Permisos**: el grupo **Veterinarios** solo puede ver la lista; el grupo
-  **Administradores** puede ver, crear, editar y eliminar. Se implementa con
-  el sistema de permisos y grupos nativo de Django
-  (`@login_required` + `@permission_required`).
-- **Vistas por función** en `mascotas/views.py` (`listar_mascotas`,
-  `crear_mascota`, `editar_mascota`, `eliminar_mascota`): cada una consulta
-  con `Mascota.objects.all()`/`.filter()`, arma un diccionario de contexto y
-  llama a `render()`.
-- **Manejo de errores (J5)**: las vistas de mascotas manejan `DatabaseError`
-  con `try/except`, registrando con `logger` y mostrando mensaje claro al
-  usuario en vez de un error 500.
-- **Validaciones y sanitización (J4)**: `MascotaForm` limpia HTML, valida que
-  nombre y especie sean solo letras (con regex `SOLO_LETRAS`), valida longitud
-  mínima, y el modelo rechaza que una mascota sea vacunada y alérgica a la vez.
-- **Panel de administración** (`/admin/`) con búsqueda y filtros, además de
-  la interfaz pública en `/mascotas/`.
+---
 
-### Nuevos modelos (J7 + J8)
+## Cumplimiento de los requisitos de la evaluación
 
-- **`Cita`** (`mascotas/models.py`): cita programada en la clínica. Campos:
-  mascota (FK), veterinario (CharField), fecha (DateField), hora (TimeField),
-  motivo (CharField), observaciones (TextField), estado (CharField con
-  choices: programada / en_curso / finalizada / cancelada). Se pueden listar,
-  crear, editar y eliminar citas.
-- **`HistorialMedico`** (`mascotas/models.py`): registro del historial médico
-  de una mascota. Campos: mascota (FK), fecha (DateField), diagnóstico
-  (CharField), tratamiento (TextField), veterinario (CharField), notas
-  (TextField). Permite registrar el historial clínico de cada mascota.
-- **`Vacuna`** (`mascotas/models.py`): registro de vacunación de una mascota.
-  Campos: mascota (FK), tipo (CharField con choices: multivitamínica,
-  antirrábica, triple virus, COVID canino, rabia, otra), fecha_aplicacion
-  (DateField), proxima_dosis (DateField nullable), lote (CharField nullable),
-  fabricante (CharField nullable), observaciones (TextField nullable).
+| # | Requisito | Dónde se cumple |
+|---|-----------|-----------------|
+| 1 | BD PostgreSQL online (Supabase) | `DATABASE_URL` en `.env`, leído con `dj-database-url` en `veterinaria/settings.py` |
+| 2 | Django 4.2+ con `settings.py` usando `.env` | Django 4.2.30; `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, BD y correo salen de `.env` (`python-dotenv`) |
+| 3 | Mínimo 5 commits progresivos | Historial J1–J8, JO1–JO5 y GA1–GA5 (ver al final) |
+| 4 | Admin con `list_display` + `search_fields` + `list_filter` | `mascotas/admin.py`: los 8 modelos, con inlines, acciones masivas y filtro por semáforo |
+| 5 | CRUD completo con validación | Mascotas, dueños, citas, vacunas, historial, facturas e inventario (formularios en `mascotas/forms.py`) |
+| 6 | Login / logout | `django.contrib.auth.urls`, plantilla `registration/login.html`, logout por POST |
+| 7 | Permisos: cada usuario ve/edita sus datos o según rol | `@permission_required` en cada vista + `mascotas/permisos.py` (filtro por dueño) + grupos de `setup_grupos` |
+| 8 | CSRF + validación en formularios | `{% csrf_token %}` en todos los formularios; acciones sensibles solo por POST (`@require_POST`); `clean_*` y `clean()` |
+| 9 | Manejo de errores con try/except y mensajes claros | `try/except DatabaseError` + `logger` + `messages` en todas las vistas; fallas de correo capturadas |
+| 10 | `.env` en `.gitignore` | `.gitignore` incluye `.env`; se sube solo `.env.example` sin claves |
 
-### Vistas para los nuevos modelos (J8)
+---
 
-- **Citas**: `listar_citas`, `crear_cita`, `editar_cita`, `eliminar_cita`
-  (con permisos `@permission_required` para cada acción).
-- **Historial médico**: `listar_historial`, `crear_historial`.
-- **Vacunas**: `listar_vacunas`, `crear_vacuna`.
+## Modelos (8) y relaciones
 
-### Plantillas nuevas (J8)
+```mermaid
+erDiagram
+    User ||--o{ DUENO : "tiene perfil"
+    DUENO ||--o{ MASCOTA : "es dueño de"
+    MASCOTA ||--o{ CITA : tiene
+    MASCOTA ||--o{ VACUNA : recibe
+    MASCOTA ||--o{ HISTORIAL_MEDICO : registra
+    DUENO ||--o{ FACTURA : paga
+    MASCOTA ||--o{ FACTURA : "atendida en"
+    CITA ||--o{ FACTURA : "se cobra en"
+    FACTURA ||--|{ DETALLE_FACTURA : contiene
+    PRODUCTO
+```
 
-- `cita_list.html`, `cita_form.html`, `cita_confirm_delete.html`
-- `historial_list.html`, `historial_form.html`
-- `vacuna_list.html`, `vacuna_form.html`
+| Modelo | Para qué sirve |
+|--------|----------------|
+| `Dueño` | Perfil del dueño, unido a un `User` para que pueda iniciar sesión |
+| `Mascota` | Paciente: especie, raza, edad, estado de vacunación, dueño |
+| `Cita` | Hora agendada con veterinario, motivo y estado |
+| `HistorialMedico` | Diagnóstico y tratamiento de cada atención |
+| `Vacuna` | Dosis aplicada, lote y fecha del refuerzo |
+| `Factura` | Cobro al dueño (pendiente / pagada / anulada) |
+| `DetalleFactura` | Líneas de la factura; neto, IVA y total se calculan |
+| `Producto` | Inventario con semáforo de stock y vencimiento |
 
-### Admin nuevos (J8)
+---
 
-- `CitaAdmin`, `HistorialMedicoAdmin`, `VacunaAdmin` registrados en
-  `mascotas/admin.py` con búsqueda, filtros, ordering y date_hierarchy.
+## Roles y permisos
+
+Se crean con `python manage.py setup_grupos`:
+
+| Grupo | Qué puede hacer |
+|-------|-----------------|
+| **Administradores** | Todo: CRUD de los 8 modelos y envío de alertas |
+| **Veterinarios** | Ven todo; gestionan citas, vacunas, historial y stock (no borran mascotas ni facturan) |
+| **Clientes** | Solo lectura y **solo de sus propias mascotas** (citas, vacunas, historial, facturas) |
+
+La regla "cada uno ve lo suyo" está en un solo lugar, `mascotas/permisos.py`,
+y la usan las vistas, el panel, los reportes, el carnet PDF y el admin. Si un
+cliente intenta abrir un registro ajeno recibe un 404.
+
+---
+
+## Instalación (Windows)
+
+```bash
+python -m venv venv
+venv\Scripts\activate            # en Linux/Mac: source venv/bin/activate
+pip install -r requirements.txt
+
+copy .env.example .env            # y completar SECRET_KEY y DATABASE_URL
+python manage.py migrate          # crea/actualiza las tablas en Supabase
+python manage.py createsuperuser
+python manage.py setup_grupos     # grupos Administradores, Veterinarios, Clientes
+python manage.py seed_demo --password "UnaClaveSegura123"   # datos para la demo (opcional)
+
+python manage.py runserver
+```
+
+Abrir `http://127.0.0.1:8000/` (lleva al panel después de iniciar sesión).
+
+### Base de datos en Supabase
+
+En Supabase: *Project Settings → Database → Connection string → URI*. Copiar
+la URL del *pooler* en `DATABASE_URL` del `.env`. Si `DATABASE_URL` está vacío
+se usa SQLite local (útil para desarrollar sin internet).
+
+### Correo (alertas de vacunas)
+
+Completar las variables `EMAIL_*` del `.env`. Con Gmail se usa una
+"contraseña de aplicación". **Sin `EMAIL_HOST_PASSWORD` los correos se
+imprimen en la consola**, así la demo funciona sin cuenta de correo.
+
+---
+
+## Comandos propios
+
+| Comando | Qué hace |
+|---------|----------|
+| `setup_grupos` | Crea o actualiza los 3 grupos con sus permisos |
+| `seed_mascotas` | Carga 6 mascotas de ejemplo |
+| `seed_demo --password X` | Usuarios `veterinario_demo` y `cliente_demo` + citas, vacunas, facturas y productos |
+| `enviar_alertas_vacunas [--simular] [--dias N]` | Envía los recordatorios de refuerzo por correo |
+
+---
+
+## Pruebas
+
+```bash
+python manage.py test mascotas
+```
+
+54 pruebas (las pruebas usan SQLite, no tocan Supabase):
+
+- `mascotas/tests.py`: modelo Mascota, lista y filtros, permisos, validación,
+  sanitización, errores de base de datos y grupos.
+- `mascotas/test_avanzado.py`: dueños, citas y choques de horario, ficha,
+  alertas y correo, carnet PDF, facturación, panel, CSV, roles e inventario.
+
+---
+
+## Infraestructura y modelos base — Jesús (PUNTO 1)
+
+- **J1**: `.gitignore` + `requirements.txt` con python-dotenv.
+- **J2**: `settings.py` con carga desde `.env` + `.env.example`.
+- **J3**: modelo `Mascota` con validadores y `estado_vacunacion`, migraciones y conexión a Supabase.
+- **J4**: sanitización y validaciones en `MascotaForm` (regex `SOLO_LETRAS`, largo mínimo, mensajes).
+- **J5**: manejo de errores en vistas con `DatabaseError` y `logger`.
+- **J6**: pruebas de validación y de errores; las pruebas usan SQLite.
+- **J7**: modelo `Dueño` (FK a `User`) y `Mascota` con dueño y raza.
+- **J8**: modelos `Cita`, `HistorialMedico` y `Vacuna` con vistas, plantillas y admin.
+- **Corrección de integración**: se dejaron de versionar `venv312/`,
+  `__pycache__/` y `db.sqlite3`; se agregó la migración merge `0005` (había dos
+  migraciones 0003) y el caso `DB_ENGINE=` vacío en `.env`.
 
 ## Funcionalidades avanzadas — Joel (PUNTO 2)
 
@@ -197,84 +258,63 @@ para que la clínica gestione a sus mascotas/pacientes.
   - `/mascotas/reportes/facturas.csv?mes=AAAA-MM`: número, fecha, dueño,
     estado, método de pago, neto, IVA y total.
 
-## Cómo correrlo
+## Admin, permisos, pruebas y documentación — Gabriel (PUNTO 3)
 
-```bash
-python3 -m venv venv
-source venv/bin/activate        # En Windows: venv\Scripts\activate
-pip install -r requirements.txt
+### GA1 — Admin avanzado
 
-python manage.py migrate
-python manage.py createsuperuser        # crea tu usuario administrador
-python manage.py setup_grupos           # crea los grupos Veterinarios/Administradores
-python manage.py seed_mascotas          # carga 6 mascotas de ejemplo, incluida 1 alérgica (la rúbrica pide 5+)
+- Inlines de citas, historial y vacunas dentro de la mascota; fieldsets
+  agrupados y acciones masivas (marcar vacunadas / no vacunadas).
+- Admin de `Factura` con sus líneas, de `Dueño` con sus mascotas y de
+  `Producto` con el semáforo en color, filtro lateral por semáforo, stock
+  editable desde la lista y acción "desactivar".
 
-python manage.py runserver
-```
+### GA2 — Permisos avanzados
 
-Abre `http://127.0.0.1:8000/` (redirige a `/mascotas/`).
+- Permisos personalizados en `Meta.permissions` (migración `0006`), por
+  ejemplo `manage_vacunas` para enviar alertas.
+- Tres grupos (`setup_grupos`) y filtro por dueño en web y admin
+  (`mascotas/permisos.py`). Se corrigió que los veterinarios vieran listas
+  vacías y que no se pudieran crear vacunas desde el admin.
+- El rol del usuario aparece en la barra superior (Administrador,
+  Veterinario o Cliente).
 
-## Asignar roles a usuarios
+### GA3 — Inventario con semáforo
 
-1. Entra a `/admin/` con el superusuario.
-2. Ve a **Usuarios** → elige o crea un usuario → sección **Grupos**.
-3. Asígnale **Veterinarios** (solo ver) o **Administradores** (control total).
-4. Un superusuario siempre tiene acceso completo, sin importar el grupo.
+- Modelo `Producto` (migración `0009`) y página `/mascotas/inventario/`.
+- 🔴 rojo: sin stock, stock en la mitad del mínimo o menos, o vencido.
+  🟡 amarillo: bajo el mínimo o vence en 30 días. 🟢 verde: en orden.
+- Entradas y salidas de stock desde la lista; la salida usa `F()` con la
+  condición `stock >= cantidad` para que nunca quede negativo.
+- El panel muestra cuántos productos hay en rojo y en amarillo.
 
-## Pruebas
+### GA4 — Pruebas y datos de demostración
 
-```bash
-python manage.py test mascotas
-```
+- `mascotas/test_avanzado.py` y el comando `seed_demo`.
 
-Incluye pruebas del modelo, de la lista (búsqueda, filtros), de permisos
-(quién puede crear/editar y quién no), de validación y sanitización del
-formulario, y de manejo de errores de base de datos. Se ejecutan 27 tests.
+### GA5 — Documentación
 
-## Estructura relevante
+- Este README: tabla de requisitos, diagrama de modelos, roles, instalación,
+  comandos y detalle de cada commit.
+
+---
+
+## Estructura
 
 ```
 mascotas/
-  models.py          # Modelos: Mascota, Dueño, Cita, HistorialMedico, Vacuna
-  forms.py           # Formularios: MascotaForm, CitaForm, HistorialMedicoForm, VacunaForm
-  views.py           # Vistas: mascotas, citas, historial, vacunas (con permisos y manejo de errores)
-  urls.py            # Rutas de la app (mascotas, citas, historial, vacunas)
-  admin.py           # Panel de administración (MascotaAdmin, CitaAdmin, HistorialMedicoAdmin, VacunaAdmin)
-  management/commands/setup_grupos.py   # Crea grupos Veterinarios/Administradores
-  management/commands/seed_mascotas.py  # Carga 6 mascotas de ejemplo
+  models.py          # 8 modelos
+  forms.py           # formularios con validación y sanitización
+  views.py           # vistas por función con permisos y manejo de errores
+  permisos.py        # regla única "cada uno ve lo suyo" + rol del usuario
+  alertas.py         # cálculo y envío de recordatorios de vacunas
+  reportes.py        # carnet de vacunación en PDF (ReportLab)
+  admin.py           # admin personalizado de los 8 modelos
+  urls.py
+  templatetags/veterinaria_extras.py   # filtro |clp para montos en pesos
+  management/commands/                 # setup_grupos, seed_mascotas, seed_demo, enviar_alertas_vacunas
   templates/
-    base.html
-    mascotas/
-      mascota_list.html
-      mascota_form.html
-      mascota_confirm_delete.html
-      cita_list.html
-      cita_form.html
-      cita_confirm_delete.html
-      historial_list.html
-      historial_form.html
-      vacuna_list.html
-      vacuna_form.html
-    registration/login.html
-  tests.py           # Tests: modelo, lista, permisos, validación, manejo de errores
+  tests.py, test_avanzado.py
 veterinaria/
-  settings.py        # LOGIN_URL, LOGIN_REDIRECT_URL, carga .env, DATABASE_URL, config TEST SQLite para tests
-  urls.py            # Incluye mascotas.urls y accounts (login/logout)
+  settings.py        # configuración leída desde .env
+  urls.py
 ```
-
-## Contribuciones
-
-Proyecto desarrollado por:
-- Jesús Torres
-- Joel
-- Gabriel
-
-Se dividió el trabajo en commits según acordado:
-- **J1**: `.gitignore` + `requirements.txt` con python-dotenv
-- **J2**: `settings.py` con carga desde `.env` + `.env.example`
-- **J3**: Modelos centrales del Caso 5 (`Mascota` con validadores, `estado_vacunacion`) + migraciones + configuración Supabase
-- **J4**: Sanitización y validaciones en `MascotaForm` (clean_nombre, clean_especie, regex SOLO_LETRAS, widgets, mensajes de error)
-- **J5**: Manejo de errores en vistas con `DatabaseError` y `logger` (listar, crear, editar, eliminar)
-- **J6**: Tests nuevos (`MascotaValidacionTest`, `ManejoErroresBDTest`) + configuración TEST SQLite para tests
-- **J7**: Modelo `Dueño` (FK a User) y `Mascota` mejorada (FK `dueno`, campo `raza`)
-- **J8**: Modelos `Cita`, `HistorialMedico` y `Vacuna` + vistas + templates + admin + README actualizado

@@ -44,3 +44,24 @@ def filtrar_por_dueno(queryset, user, ruta='mascota__dueno__user'):
     if es_cliente(user):
         return queryset.filter(**{ruta: user})
     return queryset
+
+
+def rol_de(user):
+    """Nombre del rol para mostrar en la barra superior."""
+    if not user.is_authenticated:
+        return ''
+    if user.is_superuser or user.groups.filter(name='Administradores').exists() or user.has_perm('mascotas.add_mascota'):
+        return 'Administrador'
+    if user.groups.filter(name='Veterinarios').exists():
+        return 'Veterinario'
+    if es_cliente(user) or user.groups.filter(name='Clientes').exists():
+        return 'Cliente'
+    if user.has_perm('mascotas.view_mascota'):
+        return 'Veterinario'
+    return ''
+
+
+def contexto_rol(request):
+    """Context processor: deja {{ rol_usuario }} disponible en todas las plantillas."""
+    return {'rol_usuario': rol_de(request.user) if hasattr(request, 'user') else ''}
+

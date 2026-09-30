@@ -5,17 +5,17 @@ from datetime import date, time
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import DatabaseError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
-from .models import Cita, Dueño, Factura, HistorialMedico, Mascota, Vacuna
+from .models import Cita, Dueño, Factura, HistorialMedico, Mascota, Producto, Vacuna
 from .forms import (
-    CitaForm, DetalleFacturaFormSet, DuenoForm, FacturaForm, HistorialMedicoForm,
-    MascotaForm, VacunaForm,
+    AjusteStockForm, CitaForm, DetalleFacturaFormSet, DuenoForm, FacturaForm,
+    HistorialMedicoForm, MascotaForm, ProductoForm, VacunaForm,
 )
 from .alertas import enviar_recordatorios, mascotas_sin_vacunas, vacunas_con_refuerzo_pendiente
 from .models import DIAS_AVISO_VACUNA
@@ -31,7 +31,7 @@ ERROR_BD = 'No se pudo conectar con la base de datos. Intenta nuevamente en unos
 @login_required
 def listar_mascotas(request):
     """
-    Vista principal: muestra TODAS las mascotas de la clínica.
+    Vista principal: el personal ve todas las mascotas; un cliente solo las suyas (GA2).
     """
     query = request.GET.get('q', '').strip()[:100]
     especie = request.GET.get('especie', '').strip()[:50]
@@ -47,7 +47,10 @@ def listar_mascotas(request):
     }
 
     try:
-        mascotas = Mascota.objects.all()
+        visibles = filtrar_por_dueno(
+            Mascota.objects.select_related('dueno'), request.user, ruta='dueno__user'
+        )
+        mascotas = visibles
 
         if query:
             mascotas = mascotas.filter(nombre__icontains=query)
@@ -64,9 +67,9 @@ def listar_mascotas(request):
 
         contexto['mascotas'] = list(mascotas)
         contexto['especies'] = list(
-            Mascota.objects.order_by('especie').values_list('especie', flat=True).distinct()
+            visibles.order_by('especie').values_list('especie', flat=True).distinct()
         )
-        contexto['total_pendientes'] = Mascota.objects.filter(
+        contexto['total_pendientes'] = visibles.filter(
             vacunado=False, alergico=False
         ).count()
     except DatabaseError:
@@ -102,7 +105,9 @@ def crear_mascota(request):
 @permission_required('mascotas.change_mascota', raise_exception=True)
 def editar_mascota(request, pk):
     """Edición de una mascota existente (ej: marcarla como vacunada). Solo Administradores."""
-    mascota = get_object_or_404(Mascota, pk=pk)
+    mascota = get_object_or_404(
+        filtrar_por_dueno(Mascota.objects.all(), request.user, ruta='dueno__user'), pk=pk
+    )
     if request.method == 'POST':
         form = MascotaForm(request.POST, instance=mascota)
         if form.is_valid():
@@ -125,7 +130,9 @@ def editar_mascota(request, pk):
 @permission_required('mascotas.delete_mascota', raise_exception=True)
 def eliminar_mascota(request, pk):
     """Eliminación de una mascota, con confirmación previa. Solo Administradores."""
-    mascota = get_object_or_404(Mascota, pk=pk)
+    mascota = get_object_or_404(
+        filtrar_por_dueno(Mascota.objects.all(), request.user, ruta='dueno__user'), pk=pk
+    )
     if request.method == 'POST':
         nombre = mascota.nombre
         try:
@@ -924,6 +931,10 @@ def dashboard(request):
                     user, ruta='dueno__user',
                 )
             )
+        if user.has_perm('mascotas.view_producto'):
+            productos = Producto.objects.filter(activo=True)
+            contexto['productos_rojo'] = sum(1 for p in productos if p.semaforo == 'rojo')
+            contexto['productos_amarillo'] = sum(1 for p in productos if p.semaforo == 'amarillo')
     except DatabaseError:
         logger.exception('Error al cargar el dashboard')
         messages.error(request, 'No se pudieron cargar los indicadores. ' + ERROR_BD)
@@ -1008,4 +1019,106 @@ def reporte_facturas_csv(request):
         ['Número', 'Fecha', 'Dueño', 'Mascota', 'Estado', 'Método de pago', 'Neto', 'IVA', 'Total'],
         filas,
     )
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Inventario con semáforo (GA3)
+# ────────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@permission_required('mascotas.view_producto', raise_exception=True)
+def listar_inventario(request):
+    """Inventario con filtros por nombre, categoría y color del semáforo."""
+    query = request.GET.get('q', '').strip()[:100]
+    categoria = request.GET.get('categoria', '').strip()
+    color = request.GET.get('semaforo', '').strip()
+    ver_inactivos = request.GET.get('inactivos') == '1'
+    contexto = {
+        'productos': [], 'query': query, 'categoria_seleccionada': categoria,
+        'semaforo_seleccionado': color, 'ver_inactivos': ver_inactivos,
+        'categorias': Producto.CATEGORIA_CHOICES, 'conteo': {'rojo': 0, 'amarillo': 0, 'verde': 0},
+    }
+    try:
+        productos = Producto.objects.all() if ver_inactivos else Producto.objects.filter(activo=True)
+        if query:
+            productos = productos.filter(nombre__icontains=query)
+        if categoria:
+            productos = productos.filter(categoria=categoria)
+        productos = list(productos)
+        for producto in productos:
+            contexto['conteo'][producto.semaforo] += 1
+        if color in ('rojo', 'amarillo', 'verde'):
+            productos = [p for p in productos if p.semaforo == color]
+        # Primero lo urgente: rojo, amarillo y luego verde.
+        orden = {'rojo': 0, 'amarillo': 1, 'verde': 2}
+        contexto['productos'] = sorted(productos, key=lambda p: (orden[p.semaforo], p.nombre))
+    except DatabaseError:
+        logger.exception('Error al listar inventario')
+        messages.error(request, 'No se pudo cargar el inventario. ' + ERROR_BD)
+    return render(request, 'mascotas/inventario_list.html', contexto)
+
+
+@login_required
+@permission_required('mascotas.add_producto', raise_exception=True)
+def crear_producto(request):
+    return _guardar_formulario(
+        request, ProductoForm, 'mascotas/producto_form.html', 'mascotas:inventario',
+        lambda p: f'Se agregó "{p.nombre}" al inventario.',
+    )
+
+
+@login_required
+@permission_required('mascotas.change_producto', raise_exception=True)
+def editar_producto(request, pk):
+    return _guardar_formulario(
+        request, ProductoForm, 'mascotas/producto_form.html', 'mascotas:inventario',
+        lambda p: f'Se actualizó "{p.nombre}".', instancia=get_object_or_404(Producto, pk=pk),
+    )
+
+
+@login_required
+@permission_required('mascotas.delete_producto', raise_exception=True)
+def eliminar_producto(request, pk):
+    producto = get_object_or_404(Producto, pk=pk)
+    return _confirmar_eliminacion(
+        request, producto, 'mascotas/producto_confirm_delete.html', 'mascotas:inventario',
+        f'el producto "{producto.nombre}"',
+    )
+
+
+@login_required
+@permission_required('mascotas.change_producto', raise_exception=True)
+@require_POST
+def ajustar_stock(request, pk):
+    """
+    Suma o resta unidades. La resta se hace con F() en la base de datos y con
+    la condición stock >= cantidad, así dos personas descontando a la vez no
+    dejan el stock en negativo.
+    """
+    producto = get_object_or_404(Producto, pk=pk)
+    form = AjusteStockForm(request.POST, producto=producto)
+    if not form.is_valid():
+        for error in form.non_field_errors() + [e for errores in form.errors.values() for e in errores]:
+            messages.error(request, error)
+        return redirect('mascotas:inventario')
+    cantidad, tipo = form.cleaned_data['cantidad'], form.cleaned_data['tipo']
+    try:
+        if tipo == 'entrada':
+            Producto.objects.filter(pk=pk).update(stock=F('stock') + cantidad)
+            actualizados = 1
+        else:
+            actualizados = Producto.objects.filter(pk=pk, stock__gte=cantidad).update(stock=F('stock') - cantidad)
+    except DatabaseError:
+        logger.exception('Error al ajustar stock del producto %s', pk)
+        messages.error(request, 'No se pudo actualizar el stock. ' + ERROR_BD)
+        return redirect('mascotas:inventario')
+    if not actualizados:
+        messages.error(request, 'No hay stock suficiente para esa salida.')
+    else:
+        producto.refresh_from_db()
+        messages.success(
+            request,
+            f'{tipo.capitalize()} de {cantidad} {producto.unidad} en "{producto.nombre}". Stock actual: {producto.stock}.',
+        )
+    return redirect('mascotas:inventario')
 
