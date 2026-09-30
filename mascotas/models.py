@@ -1,3 +1,6 @@
+from datetime import timedelta
+from decimal import Decimal
+
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -6,6 +9,9 @@ from django.utils import timezone
 
 # Días de anticipación con que se avisa una dosis de refuerzo (JO3).
 DIAS_AVISO_VACUNA = 30
+
+# Horas de anticipación con que se avisa una cita programada.
+HORAS_AVISO_CITA = 24
 
 
 class Dueño(models.Model):
@@ -42,8 +48,16 @@ class Dueño(models.Model):
         max_length=150,
         blank=True,
         null=True,
+        unique=True,
         verbose_name='Correo electrónico',
-        help_text='Correo para notificaciones (opcional).',
+        help_text='Correo para notificaciones. No puede repetirse entre dueños.',
+    )
+    ciudad = models.CharField(
+        max_length=80,
+        blank=True,
+        null=True,
+        verbose_name='Ciudad',
+        help_text='Ciudad donde vive el dueño (opcional).',
     )
 
     def __str__(self):
@@ -61,6 +75,17 @@ class Mascota(models.Model):
     """
     Un paciente de la clínica.
     """
+    SEXO_CHOICES = [
+        ('macho', 'Macho'),
+        ('hembra', 'Hembra'),
+    ]
+    ESTADO_CHOICES = [
+        ('activo', 'Activo'),
+        ('en_tratamiento', 'En tratamiento'),
+        ('recuperando', 'Recuperando'),
+        ('fallecido', 'Fallecido'),
+    ]
+
     nombre = models.CharField(max_length=100)
     especie = models.CharField(max_length=50)
     edad = models.IntegerField(
@@ -86,6 +111,42 @@ class Mascota(models.Model):
         verbose_name='Raza',
         help_text='Raza de la mascota (ej: Labrador, Siames, Angora...)',
     )
+    fecha_nacimiento = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name='Fecha de nacimiento',
+        help_text='Se usa para calcular la edad al mostrar la ficha. Opcional.',
+    )
+    peso = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0.01'), message='El peso debe ser mayor a 0.')],
+        verbose_name='Peso (kg)',
+        help_text='Peso actual en kilogramos (opcional).',
+    )
+    sexo = models.CharField(
+        max_length=10,
+        choices=SEXO_CHOICES,
+        blank=True,
+        default='',
+        verbose_name='Sexo',
+    )
+    estado = models.CharField(
+        max_length=20,
+        choices=ESTADO_CHOICES,
+        default='activo',
+        verbose_name='Estado',
+        help_text='Estado general de la mascota en la clínica.',
+    )
+    foto = models.ImageField(
+        upload_to='mascotas/',
+        blank=True,
+        null=True,
+        verbose_name='Foto',
+        help_text='Fotografía de la mascota (opcional).',
+    )
     vacunado = models.BooleanField(default=False)
     alergico = models.BooleanField(
         default=False,
@@ -99,9 +160,35 @@ class Mascota(models.Model):
             raise ValidationError(
                 'Una mascota no puede estar vacunada y ser alérgica a las vacunas a la vez.'
             )
+        if self.fecha_nacimiento and self.fecha_nacimiento > timezone.localdate():
+            raise ValidationError(
+                {'fecha_nacimiento': 'La fecha de nacimiento no puede ser futura.'}
+            )
 
     def __str__(self):
         return self.nombre
+
+    @property
+    def edad_calculada(self):
+        """
+        Edad en años a partir de la fecha de nacimiento. Si no hay fecha,
+        devuelve la edad guardada a mano, para no perder el dato previo.
+        """
+        if not self.fecha_nacimiento:
+            return self.edad
+        meses = (timezone.localdate() - self.fecha_nacimiento).days // 30
+        return max(0, meses // 12)
+
+    @property
+    def edad_texto(self):
+        """Edad legible: '3 años' o '5 meses' si es Cachorro."""
+        anios = self.edad_calculada
+        if not self.fecha_nacimiento:
+            return '%d año%s' % (anios, '' if anios == 1 else 's')
+        meses = (timezone.localdate() - self.fecha_nacimiento).days // 30
+        if meses < 12:
+            return '%d mes%s' % (meses, '' if meses == 1 else 'es')
+        return '%d año%s' % (anios, '' if anios == 1 else 's')
 
     @property
     def estado_vacunacion(self):
@@ -111,6 +198,20 @@ class Mascota(models.Model):
         if self.vacunado:
             return 'al_dia'
         return 'pendiente'
+
+    @property
+    def proxima_vacuna(self):
+        """Fecha de la próxima dosis de refuerzo más cercana, o None."""
+        refuerzo = self.vacunas.filter(proxima_dosis__isnull=False).order_by('proxima_dosis').first()
+        return refuerzo.proxima_dosis if refuerzo else None
+
+    @property
+    def ultima_cita(self):
+        """Fecha de la última cita ya realizada, o None si nunca ha tenido una."""
+        atendida = self.citas.exclude(
+            estado__in=['programada', 'cancelada']
+        ).order_by('-fecha').first()
+        return atendida.fecha if atendida else None
 
     class Meta:
         ordering = ['nombre']
@@ -160,6 +261,22 @@ class Cita(models.Model):
         choices=ESTADO_CHOICES,
         default='programada',
         verbose_name='Estado',
+    )
+    duracion = models.PositiveIntegerField(
+        blank=True,
+        null=True,
+        validators=[
+            MinValueValidator(5, message='La duración mínima es 5 minutos.'),
+            MaxValueValidator(480, message='La duración máxima es 480 minutos (8 horas).'),
+        ],
+        verbose_name='Duración (minutos)',
+        help_text='Cuánto seاليات la consulta. Opcional.',
+    )
+    alerta_enviada_el = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='Recordatorio enviado el',
+        help_text='Momento en que se envió el recordatorio de esta cita por correo.',
     )
 
     def __str__(self):
@@ -438,6 +555,82 @@ class DetalleFactura(models.Model):
     @property
     def subtotal(self):
         return (self.cantidad or 0) * (self.precio_unitario or 0)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Recetas (indicación del veterinario tras una consulta)
+# ────────────────────────────────────────────────────────────────────────────────
+
+
+class Receta(models.Model):
+    """
+    Medicamento recetado en una cita, con su dosis y duración.
+
+    Se liga a la Cita porque la receta siempre nace de una consulta; desde
+    ahí se sabe qué mascota y qué dueño la recibe.
+    """
+    cita = models.ForeignKey(
+        Cita,
+        on_delete=models.CASCADE,
+        related_name='recetas',
+        verbose_name='Cita',
+    )
+    medicamento = models.CharField(
+        max_length=120,
+        verbose_name='Medicamento',
+        help_text='Nombre del medicamento recetado (ej: Amoxicilina 500mg).',
+    )
+    dosis = models.CharField(
+        max_length=120,
+        verbose_name='Dosis',
+        help_text='Cómo se administra (ej: 1 comprimido cada 12 horas).',
+    )
+    duracion_dias = models.PositiveIntegerField(
+        validators=[
+            MinValueValidator(1, message='La duración mínima es 1 día.'),
+            MaxValueValidator(365, message='La duración máxima es 365 días.'),
+        ],
+        verbose_name='Duración (días)',
+        help_text='Cuántos días debe seguir el tratamiento.',
+    )
+    fecha = models.DateField(
+        default=timezone.localdate,
+        verbose_name='Fecha de la indicación',
+    )
+    observaciones = models.TextField(blank=True, null=True, verbose_name='Observaciones')
+    receta_lista_el = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='Aviso de receta enviada el',
+        help_text='Momento en que se avisó al dueño que la receta está lista.',
+    )
+
+    def __str__(self):
+        return f'Receta: {self.medicamento} ({self.cita.mascota.nombre})'
+
+    @property
+    def fecha_fin(self):
+        """Último día del tratamiento."""
+        return self.fecha + timedelta(days=self.duracion_dias - 1)
+
+    @property
+    def en_curso(self):
+        """True si la receta está vigente hoy."""
+        hoy = timezone.localdate()
+        return self.fecha <= hoy <= self.fecha_fin
+
+    @property
+    def dias_restantes(self):
+        """Días que faltan para terminar el tratamiento (0 si ya venció)."""
+        return max(0, (self.fecha_fin - timezone.localdate()).days)
+
+    class Meta:
+        ordering = ['-fecha']
+        verbose_name = 'Receta'
+        verbose_name_plural = 'Recetas'
+        permissions = [
+            ("view_own_recetas", "Puede ver solo sus propias recetas"),
+        ]
 
 
 # ────────────────────────────────────────────────────────────────────────────────
