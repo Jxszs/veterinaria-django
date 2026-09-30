@@ -5,6 +5,26 @@ from .models import Mascota, Cita, HistorialMedico, Vacuna
 
 
 # ────────────────────────────────────────────────────────────────────────────────
+# Filtrado por dueño (G2): superusuario ve todo, los demás solo lo suyo
+# ────────────────────────────────────────────────────────────────────────────────
+
+class FiltradoPorDuenoMixin:
+    """
+    Reutiliza el mismo filtro de la rama G2 en todos los admin.
+    `ruta_dueno` indica cómo llegar desde el modelo al User del dueño.
+    """
+    ruta_dueno = 'mascota__dueno__user'
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if request.user.is_superuser:
+            return qs
+        if hasattr(request.user, 'duenos'):
+            return qs.filter(**{self.ruta_dueno: request.user})
+        return qs.none()
+
+
+# ────────────────────────────────────────────────────────────────────────────────
 # Inlines: ver/editar modelos relacionados dentro del admin de Mascota
 # ────────────────────────────────────────────────────────────────────────────────
 
@@ -69,7 +89,9 @@ def marcar_como_no_vacunadas(modeladmin, request, queryset):
 # ────────────────────────────────────────────────────────────────────────────────
 
 @admin.register(Mascota)
-class MascotaAdmin(admin.ModelAdmin):
+class MascotaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
+    ruta_dueno = 'dueno__user'
+
     # ── Listado ──
     list_display = (
         'nombre', 'especie', 'edad', 'dueno', 'vacunado',
@@ -109,7 +131,7 @@ class MascotaAdmin(admin.ModelAdmin):
 # ────────────────────────────────────────────────────────────────────────────────
 
 @admin.register(Cita)
-class CitaAdmin(admin.ModelAdmin):
+class CitaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
     list_display = ('mascota', 'veterinario', 'fecha', 'hora', 'estado', 'motivo')
     list_filter = ('estado', 'fecha', 'veterinario')
     search_fields = ('mascota__nombre', 'veterinario')
@@ -135,7 +157,7 @@ class CitaAdmin(admin.ModelAdmin):
 # ────────────────────────────────────────────────────────────────────────────────
 
 @admin.register(HistorialMedico)
-class HistorialMedicoAdmin(admin.ModelAdmin):
+class HistorialMedicoAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
     list_display = ('mascota', 'fecha', 'diagnostico', 'veterinario', 'tratamiento_resumido')
     list_filter = ('fecha', 'veterinario')
     search_fields = ('mascota__nombre', 'diagnostico', 'veterinario')
@@ -168,7 +190,7 @@ class HistorialMedicoAdmin(admin.ModelAdmin):
 # ────────────────────────────────────────────────────────────────────────────────
 
 @admin.register(Vacuna)
-class VacunaAdmin(admin.ModelAdmin):
+class VacunaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
     list_display = ('mascota', 'tipo', 'fecha_aplicacion', 'proxima_dosis', 'fabricante', 'lote')
     list_filter = ('tipo', 'fecha_aplicacion', 'fabricante')
     search_fields = ('mascota__nombre', 'lote', 'fabricante')
