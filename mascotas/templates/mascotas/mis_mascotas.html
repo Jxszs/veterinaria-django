@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Mis mascotas - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3">Mis mascotas</h1>
+
+{% if mascotas %}
+    <div class="row g-3">
+        {% for m in mascotas %}
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h2 class="h5">{{ m.nombre }}</h2>
+                        <p class="text-muted mb-2">{{ m.especie }}{% if m.raza %} · {{ m.raza }}{% endif %} · {{ m.edad }} año{{ m.edad|pluralize }}</p>
+                        <p class="mb-1">
+                            {% if m.estado_vacunacion == 'alergia' %}<span class="badge badge-alergia">🟡 Alérgico a vacunas</span>
+                            {% elif m.estado_vacunacion == 'al_dia' %}<span class="badge badge-al-dia">🟢 Vacunado</span>
+                            {% else %}<span class="badge badge-pendiente">🔴 Vacunación pendiente</span>{% endif %}
+                        </p>
+                        {% if m.dosis_vencidas %}
+                            <p class="text-danger small mb-1">⚠️ Tiene {{ m.dosis_vencidas }} dosis vencida{{ m.dosis_vencidas|pluralize }}. Agenda una hora.</p>
+                        {% endif %}
+                        <p class="small mb-0">
+                            <strong>Próxima cita:</strong>
+                            {% if m.proxima_cita %}
+                                {{ m.proxima_cita.fecha|date:"d/m/Y" }} a las {{ m.proxima_cita.hora|time:"H:i" }}
+                            {% else %}
+                                sin citas programadas
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="alert alert-info">No tienes mascotas asociadas a tu cuenta. Si crees que es un error, contacta a la clínica.</div>
+{% endif %}
+{% endblock %}

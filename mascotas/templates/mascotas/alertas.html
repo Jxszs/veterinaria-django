@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block title %}Alertas - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Alertas y recordatorios</h1>
+    <span class="text-muted small">Actualizado al {{ hoy|date:"d/m/Y" }}</span>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md">
+        <div class="card text-bg-danger h-100"><div class="card-body">
+            <div class="display-6">{{ vacunas_vencidas|length }}</div>Dosis vencidas
+        </div></div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card text-bg-warning h-100"><div class="card-body">
+            <div class="display-6">{{ vacunas_por_vencer|length }}</div>Vencen en {{ dias_aviso }} días
+        </div></div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card text-bg-secondary h-100"><div class="card-body">
+            <div class="display-6">{{ mascotas_sin_vacunar|length }}</div>Sin vacunar
+        </div></div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card text-bg-primary h-100"><div class="card-body">
+            <div class="display-6">{{ citas_hoy|length }}</div>Citas hoy
+        </div></div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card text-bg-info h-100"><div class="card-body">
+            <div class="display-6">{{ citas_proximas|length }}</div>Próximos {{ dias_citas }} días
+        </div></div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <h2 class="h5">💉 Dosis vencidas</h2>
+        <ul class="list-group mb-4">
+            {% for v in vacunas_vencidas %}
+                <li class="list-group-item d-flex justify-content-between align-items-start">
+                    <div>
+                        <a href="{% url 'mascotas:ficha' v.mascota.pk %}" class="fw-semibold">{{ v.mascota.nombre }}</a>
+                        — {{ v.get_tipo_display }}
+                        {% if v.mascota.dueno %}<br><small class="text-muted">Dueño: {{ v.mascota.dueno.nombre }} {% firstof v.mascota.dueno.telefono v.mascota.dueno.whatsapp v.mascota.dueno.email %}</small>{% endif %}
+                    </div>
+                    <span class="badge bg-danger">hace {{ v.dias_de_atraso }} día{{ v.dias_de_atraso|pluralize }}</span>
+                </li>
+            {% empty %}
+                <li class="list-group-item text-muted">Sin dosis vencidas. 🎉</li>
+            {% endfor %}
+        </ul>
+
+        <h2 class="h5">⏳ Dosis por vencer</h2>
+        <ul class="list-group mb-4">
+            {% for v in vacunas_por_vencer %}
+                <li class="list-group-item d-flex justify-content-between align-items-start">
+                    <div>
+                        <a href="{% url 'mascotas:ficha' v.mascota.pk %}" class="fw-semibold">{{ v.mascota.nombre }}</a>
+                        — {{ v.get_tipo_display }}
+                        <br><small class="text-muted">Próxima dosis: {{ v.proxima_dosis|date:"d/m/Y" }}</small>
+                    </div>
+                    <span class="badge bg-warning text-dark">
+                        {% if v.dias_para_proxima == 0 %}hoy{% else %}en {{ v.dias_para_proxima }} día{{ v.dias_para_proxima|pluralize }}{% endif %}
+                    </span>
+                </li>
+            {% empty %}
+                <li class="list-group-item text-muted">No hay dosis por vencer en los próximos {{ dias_aviso }} días.</li>
+            {% endfor %}
+        </ul>
+
+        <h2 class="h5">🔴 Mascotas sin vacunar</h2>
+        <ul class="list-group mb-4">
+            {% for m in mascotas_sin_vacunar %}
+                <li class="list-group-item">
+                    <a href="{% url 'mascotas:ficha' m.pk %}">{{ m.nombre }}</a>
+                    <small class="text-muted">({{ m.especie }}{% if m.dueno %} · {{ m.dueno.nombre }}{% endif %})</small>
+                </li>
+            {% empty %}
+                <li class="list-group-item text-muted">Todas las mascotas están vacunadas o son alérgicas.</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div class="col-lg-6">
+        <h2 class="h5">📅 Citas de hoy</h2>
+        <ul class="list-group mb-4">
+            {% for c in citas_hoy %}
+                <li class="list-group-item d-flex justify-content-between">
+                    <span><strong>{{ c.hora|time:"H:i" }}</strong> · {{ c.mascota.nombre }} con {{ c.veterinario }}{% if c.motivo %} — {{ c.motivo }}{% endif %}</span>
+                    <span class="badge {% if c.estado == 'en_curso' %}bg-primary{% else %}bg-info{% endif %}">{{ c.get_estado_display }}</span>
+                </li>
+            {% empty %}
+                <li class="list-group-item text-muted">No hay citas para hoy.</li>
+            {% endfor %}
+        </ul>
+
+        <h2 class="h5">🗓️ Próximas citas ({{ dias_citas }} días)</h2>
+        <ul class="list-group mb-4">
+            {% for c in citas_proximas %}
+                <li class="list-group-item">
+                    <strong>{{ c.fecha|date:"D d/m" }} {{ c.hora|time:"H:i" }}</strong> · {{ c.mascota.nombre }} con {{ c.veterinario }}
+                </li>
+            {% empty %}
+                <li class="list-group-item text-muted">Sin citas programadas para los próximos días.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endblock %}

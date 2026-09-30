@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %}Reportes - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Reportes</h1>
+    <a href="?formato=csv" class="btn btn-outline-success btn-sm">⬇ Descargar mascotas (CSV)</a>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h2 class="h6 text-uppercase text-muted">Mascotas por estado de vacunación</h2>
+            <p class="mb-2">Total: <strong>{{ total_mascotas }}</strong> · Sin dueño registrado: {{ sin_dueno }}</p>
+            {% for texto, cantidad, color in por_estado %}
+                <div class="d-flex justify-content-between small"><span>{{ texto }}</span><span>{{ cantidad }}</span></div>
+                <div class="progress mb-2" role="progressbar" aria-label="{{ texto }}">
+                    <div class="progress-bar bg-{{ color }}" style="width: {% widthratio cantidad total_mascotas|default:1 100 %}%"></div>
+                </div>
+            {% endfor %}
+        </div></div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h2 class="h6 text-uppercase text-muted">Mascotas por especie</h2>
+            <table class="table table-sm mb-0">
+                {% for fila in por_especie %}
+                    <tr><td>{{ fila.especie }}</td><td class="text-end">{{ fila.total }}</td></tr>
+                {% empty %}
+                    <tr><td class="text-muted">Sin datos.</td></tr>
+                {% endfor %}
+            </table>
+        </div></div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h2 class="h6 text-uppercase text-muted">Citas por estado</h2>
+            <table class="table table-sm mb-0">
+                {% for texto, cantidad in citas_por_estado %}
+                    <tr><td>{{ texto }}</td><td class="text-end">{{ cantidad }}</td></tr>
+                {% empty %}
+                    <tr><td class="text-muted">Sin citas.</td></tr>
+                {% endfor %}
+            </table>
+        </div></div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h2 class="h6 text-uppercase text-muted">Citas por veterinario</h2>
+            <table class="table table-sm mb-0">
+                <thead><tr><th>Veterinario</th><th class="text-end">Total</th><th class="text-end">Finalizadas</th><th class="text-end">Canceladas</th></tr></thead>
+                {% for fila in citas_por_veterinario %}
+                    <tr>
+                        <td>{{ fila.veterinario }}</td>
+                        <td class="text-end">{{ fila.total }}</td>
+                        <td class="text-end">{{ fila.finalizadas }}</td>
+                        <td class="text-end">{{ fila.canceladas }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="text-muted">Sin citas.</td></tr>
+                {% endfor %}
+            </table>
+        </div></div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h2 class="h6 text-uppercase text-muted">Vacunas aplicadas por tipo</h2>
+            <table class="table table-sm mb-0">
+                {% for texto, cantidad in vacunas_por_tipo %}
+                    <tr><td>{{ texto }}</td><td class="text-end">{{ cantidad }}</td></tr>
+                {% empty %}
+                    <tr><td class="text-muted">Sin vacunas registradas.</td></tr>
+                {% endfor %}
+            </table>
+        </div></div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card h-100"><div class="card-body">
+            <h2 class="h6 text-uppercase text-muted">Dueños con más mascotas</h2>
+            <table class="table table-sm mb-0">
+                {% for d in duenos_top %}
+                    <tr>
+                        <td><a href="{% url 'mascotas:lista' %}?dueno={{ d.pk }}">{{ d.nombre }}</a></td>
+                        <td class="text-end">{{ d.total }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td class="text-muted">Sin dueños con mascotas.</td></tr>
+                {% endfor %}
+            </table>
+        </div></div>
+    </div>
+</div>
+{% endblock %}

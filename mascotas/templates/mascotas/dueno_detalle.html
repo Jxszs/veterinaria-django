@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}{{ dueno.nombre }} - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">{{ dueno.nombre }}</h1>
+    <div class="d-flex gap-2">
+        {% if perms.mascotas.change_dueño %}
+            <a href="{% url 'mascotas:editar_dueno' dueno.pk %}" class="btn btn-outline-primary btn-sm">Editar</a>
+        {% endif %}
+        <a href="{% url 'mascotas:lista_duenos' %}" class="btn btn-outline-secondary btn-sm">← Volver</a>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Usuario</dt><dd class="col-sm-9">{{ dueno.user.get_username }}</dd>
+            <dt class="col-sm-3">Teléfono</dt><dd class="col-sm-9">{{ dueno.telefono|default:"—" }}</dd>
+            <dt class="col-sm-3">WhatsApp</dt><dd class="col-sm-9">{{ dueno.whatsapp|default:"—" }}</dd>
+            <dt class="col-sm-3">Correo</dt><dd class="col-sm-9">{{ dueno.email|default:"—" }}</dd>
+            <dt class="col-sm-3">Dirección</dt><dd class="col-sm-9 mb-0">{{ dueno.direccion|default:"—" }}</dd>
+        </dl>
+    </div>
+</div>
+
+<h2 class="h5">Mascotas ({{ mascotas|length }})</h2>
+<div class="table-responsive">
+    <table class="table table-bordered align-middle bg-white">
+        <thead class="table-light">
+            <tr><th>Nombre</th><th>Especie</th><th>Raza</th><th>Edad</th><th>Vacunación</th><th></th></tr>
+        </thead>
+        <tbody>
+            {% for m in mascotas %}
+                <tr>
+                    <td>{{ m.nombre }}</td>
+                    <td>{{ m.especie }}</td>
+                    <td>{{ m.raza|default:"—" }}</td>
+                    <td>{{ m.edad }}</td>
+                    <td>
+                        {% if m.estado_vacunacion == 'alergia' %}<span class="badge badge-alergia">🟡 Alergia</span>
+                        {% elif m.estado_vacunacion == 'al_dia' %}<span class="badge badge-al-dia">🟢 Sí</span>
+                        {% else %}<span class="badge badge-pendiente">🔴 No</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if perms.mascotas.view_mascota %}
+                            <a href="{% url 'mascotas:ficha' m.pk %}" class="btn btn-sm btn-outline-dark">Ficha</a>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="6" class="text-center text-muted">Este dueño aún no tiene mascotas asociadas.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
