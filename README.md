@@ -302,19 +302,50 @@ python manage.py test mascotas
 
 ```
 mascotas/
-  models.py          # 8 modelos
+  models.py          # 9 modelos
   forms.py           # formularios con validación y sanitización
   views.py           # vistas por función con permisos y manejo de errores
   permisos.py        # regla única "cada uno ve lo suyo" + rol del usuario
-  alertas.py         # cálculo y envío de recordatorios de vacunas
+  alertas.py         # envío de recordatorios (vacunas, citas y recetas)
   reportes.py        # carnet de vacunación en PDF (ReportLab)
-  admin.py           # admin personalizado de los 8 modelos
+  admin.py           # admin personalizado de los 9 modelos
   urls.py
   templatetags/veterinaria_extras.py   # filtro |clp para montos en pesos
-  management/commands/                 # setup_grupos, seed_mascotas, seed_demo, enviar_alertas_vacunas
+  management/commands/                 # setup_grupos, seed_mascotas, seed_demo,
+                                       # enviar_alertas_vacunas, enviar_recordatorios
   templates/
-  tests.py, test_avanzado.py
+  tests.py, test_avanzado.py, test_campos_extra.py
 veterinaria/
   settings.py        # configuración leída desde .env
   urls.py
 ```
+
+## Correspondencia con el enunciado (Caso 5)
+
+El enunciado nombra algunos campos de otra forma. Este es el mapa entre lo
+pedido y lo implementado:
+
+| En el enunciado | En el código |
+| --- | --- |
+| `Dueño`: nombre, email, telefono, direccion, **ciudad** | `Dueño`: `nombre`, `email` (único), `telefono`, `whatsapp`, `direccion`, `ciudad`, `user` |
+| `Mascota`: dueno, nombre, especie, raza, fecha_nacimiento, peso, foto, sexo, estado | `Mascota`: todos esos, más `edad`, `vacunado` y `alergico` |
+| `Cita`: mascota, veterinario, fecha_hora, razon, estado, notas, duracion | `Cita`: `fecha` + `hora` separadas, `motivo` (la razón), `observaciones` (las notas), `duracion` |
+| `HistorialMedico`: mascota, fecha, veterinario, diagnostico, tratamiento | igual |
+| `Vacuna`: mascota, nombre, fecha_administracion, proximo_refuerzo, veterinario | `Vacuna`: `tipo` (el nombre), `fecha_aplicacion`, `proxima_dosis`, más `lote`, `fabricante` |
+| `Receta`: cita, medicamento, dosis, duracion_dias | `Receta`, con esas cuatro más `fecha` y `observaciones` |
+| `Medicamento`: nombre, presentacion, stock, precio, fecha_vencimiento | `Producto`: `nombre`, `unidad` (la presentación), `stock`, `precio_venta`, `fecha_vencimiento` |
+| `Factura`: cita, dueno, monto, fecha, estado_pago | `Factura`: `dueno`, `cita`, `fecha`, `estado`; el monto se **calcula** con `DetalleFactura` (neto + IVA 19 %) en vez de escribirse a mano |
+
+Las funcionalidades del PUNTO 2:
+
+| Pedido | Dónde está |
+| --- | --- |
+| Carnet de vacunación en PDF | `/mascotas/<id>/carnet.pdf` (`mascotas/reportes.py`) |
+| Alertas: próximo refuerzo | `mascotas/alertas.py`, comando `enviar_alertas_vacunas` |
+| Alertas: cita en 24 horas | `mascotas/alertas.py`, comando `enviar_recordatorios` |
+| Alertas: receta lista | `mascotas/alertas.py`, comando `enviar_recordatorios` |
+| Histórico cronológico completo | Ficha de la mascota, línea de tiempo con citas, vacunas, historial **y recetas** |
+| Inventario con semáforo (ROJO/AMARILLO/VERDE) | `Producto.semaforo`, pantalla `/mascotas/inventario/` |
+| Facturación con total automático | `Factura` + `DetalleFactura`, IVA calculado |
+| Dashboard veterinario | `/mascotas/panel/`: citas de hoy, próximas, refuerzos, ingresos del mes, por cobrar, semáforo del inventario |
+| Admin avanzado: `proxima_vacuna`, `ultima_cita` | Columnas calculadas en el admin de Mascota |
