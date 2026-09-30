@@ -22,7 +22,7 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
       <div class="container">
-          <a class="navbar-brand" href="{% url 'mascotas:lista' %}">🐾 Clínica Veterinaria</a>
+          <a class="navbar-brand" href="{% url 'mascotas:dashboard' %}">🐾 Clínica Veterinaria</a>
           {% if user.is_authenticated %}
               <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menuPrincipal"
                       aria-controls="menuPrincipal" aria-expanded="false" aria-label="Abrir menú">
@@ -31,7 +31,8 @@
               <div class="collapse navbar-collapse" id="menuPrincipal">
                   {% with url=request.resolver_match.url_name %}
                   <ul class="navbar-nav me-auto">
-                      <li class="nav-item"><a class="nav-link {% if url == 'lista' %}active{% endif %}" href="{% url 'mascotas:lista' %}">Mascotas</a></li>
+                      <li class="nav-item"><a class="nav-link {% if url == 'dashboard' %}active{% endif %}" href="{% url 'mascotas:dashboard' %}">Panel</a></li>
+                      <li class="nav-item"><a class="nav-link {% if url == 'lista' or url == 'ficha' %}active{% endif %}" href="{% url 'mascotas:lista' %}">Mascotas</a></li>
                       {% if perms.mascotas.view_cita %}
                           <li class="nav-item"><a class="nav-link {% if 'cita' in url %}active{% endif %}" href="{% url 'mascotas:lista_citas' %}">Citas</a></li>
                       {% endif %}

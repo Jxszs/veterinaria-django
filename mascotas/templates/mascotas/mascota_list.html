@@ -5,9 +5,12 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="h3 mb-0">Mascotas registradas</h1>
-    {% if perms.mascotas.add_mascota %}
-        <a href="{% url 'mascotas:crear' %}" class="btn btn-success">+ Nueva mascota</a>
-    {% endif %}
+    <div class="d-flex gap-2">
+        <a href="{% url 'mascotas:reporte_mascotas' %}?{{ request.GET.urlencode }}" class="btn btn-outline-secondary">Exportar CSV</a>
+        {% if perms.mascotas.add_mascota %}
+            <a href="{% url 'mascotas:crear' %}" class="btn btn-success">+ Nueva mascota</a>
+        {% endif %}
+    </div>
 </div>
 
 {% if total_pendientes %}

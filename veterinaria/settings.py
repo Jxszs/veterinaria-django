@@ -171,7 +171,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # -------------------------------------------------------------------
 
 LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = 'mascotas:lista'
+LOGIN_REDIRECT_URL = 'mascotas:dashboard'  # JO5: al entrar se ve el panel
 LOGOUT_REDIRECT_URL = 'login'
 
 

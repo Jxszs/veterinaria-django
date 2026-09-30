@@ -47,4 +47,9 @@ urlpatterns = [
     path('facturas/<int:pk>/editar/', views.editar_factura, name='editar_factura'),
     path('facturas/<int:pk>/estado/', views.cambiar_estado_factura, name='estado_factura'),
     path('facturas/<int:pk>/eliminar/', views.eliminar_factura, name='eliminar_factura'),
+
+    # ── Dashboard y reportes (JO5) ──
+    path('panel/', views.dashboard, name='dashboard'),
+    path('reportes/mascotas.csv', views.reporte_mascotas_csv, name='reporte_mascotas'),
+    path('reportes/facturas.csv', views.reporte_facturas_csv, name='reporte_facturas'),
 ]

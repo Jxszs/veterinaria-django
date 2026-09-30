@@ -1,5 +1,6 @@
+import csv
 import logging
-from datetime import time
+from datetime import date, time
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
@@ -836,5 +837,175 @@ def eliminar_factura(request, pk):
     return _confirmar_eliminacion(
         request, factura, 'mascotas/factura_confirm_delete.html', 'mascotas:lista_facturas',
         f'la factura {factura.numero}',
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Dashboard y reportes (JO5)
+# ────────────────────────────────────────────────────────────────────────────────
+
+MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+
+def _ultimos_meses(hoy, cantidad=6):
+    """[(año, mes), ...] de los últimos `cantidad` meses, del más antiguo al actual."""
+    meses = []
+    anio, mes = hoy.year, hoy.month
+    for _ in range(cantidad):
+        meses.append((anio, mes))
+        mes -= 1
+        if mes == 0:
+            anio, mes = anio - 1, 12
+    return list(reversed(meses))
+
+
+def _con_porcentaje(filas, clave='total'):
+    """Agrega 'porcentaje' a cada fila (respecto del mayor) para dibujar barras."""
+    maximo = max((fila[clave] for fila in filas), default=0) or 1
+    for fila in filas:
+        fila['porcentaje'] = round(fila[clave] * 100 / maximo)
+    return filas
+
+
+@login_required
+def dashboard(request):
+    """
+    Panel de inicio con los números clave de la clínica. Cada bloque respeta
+    los permisos: un cliente ve solo lo de sus mascotas y la facturación solo
+    aparece a quien tiene permiso para ver facturas.
+    """
+    user = request.user
+    hoy = timezone.localdate()
+    contexto = {'hoy': hoy}
+    try:
+        mascotas = filtrar_por_dueno(Mascota.objects.all(), user, ruta='dueno__user')
+        contexto['total_mascotas'] = mascotas.count()
+        contexto['pendientes_vacuna'] = mascotas.filter(vacunado=False, alergico=False).count()
+        contexto['por_especie'] = _con_porcentaje(list(
+            mascotas.values('especie').annotate(total=Count('id')).order_by('-total', 'especie')
+        ))
+        contexto['por_estado'] = [
+            {'clave': 'al_dia', 'nombre': 'Al día', 'total': mascotas.filter(vacunado=True, alergico=False).count()},
+            {'clave': 'pendiente', 'nombre': 'Pendiente', 'total': contexto['pendientes_vacuna']},
+            {'clave': 'alergia', 'nombre': 'Alergia', 'total': mascotas.filter(alergico=True).count()},
+        ]
+        _con_porcentaje(contexto['por_estado'])
+
+        if user.has_perm('mascotas.view_cita'):
+            citas = filtrar_por_dueno(Cita.objects.select_related('mascota'), user)
+            contexto['citas_hoy'] = list(citas.filter(fecha=hoy).exclude(estado='cancelada').order_by('hora'))
+            contexto['citas_proximas'] = citas.filter(fecha__gt=hoy, estado='programada').count()
+
+        if user.has_perm('mascotas.view_vacuna'):
+            refuerzos = list(vacunas_con_refuerzo_pendiente(
+                queryset=filtrar_por_dueno(Vacuna.objects.all(), user)
+            ))
+            contexto['refuerzos_vencidos'] = sum(1 for v in refuerzos if v.estado_dosis == 'vencida')
+            contexto['refuerzos_proximos'] = len(refuerzos) - contexto['refuerzos_vencidos']
+
+        if user.has_perm('mascotas.view_factura'):
+            meses = _ultimos_meses(hoy)
+            desde = date(meses[0][0], meses[0][1], 1)
+            facturas = list(
+                filtrar_por_dueno(Factura.objects.prefetch_related('detalles'), user, ruta='dueno__user')
+                .filter(fecha__gte=desde).exclude(estado='anulada')
+            )
+            ingresos = {m: 0 for m in meses}
+            for factura in facturas:
+                if factura.estado == 'pagada':
+                    ingresos[(factura.fecha.year, factura.fecha.month)] += factura.total
+            contexto['ingresos'] = _con_porcentaje([
+                {'etiqueta': f'{MESES[m - 1]} {str(a)[2:]}', 'total': ingresos[(a, m)]} for a, m in meses
+            ])
+            contexto['ingreso_mes'] = ingresos[(hoy.year, hoy.month)]
+            contexto['por_cobrar'] = sum(
+                f.total for f in filtrar_por_dueno(
+                    Factura.objects.filter(estado='pendiente').prefetch_related('detalles'),
+                    user, ruta='dueno__user',
+                )
+            )
+    except DatabaseError:
+        logger.exception('Error al cargar el dashboard')
+        messages.error(request, 'No se pudieron cargar los indicadores. ' + ERROR_BD)
+    return render(request, 'mascotas/dashboard.html', contexto)
+
+
+def _respuesta_csv(nombre_archivo, encabezados, filas):
+    """
+    CSV listo para abrir en Excel: separador ';' (Excel en español) y BOM
+    UTF-8 para que las tildes y la ñ se vean bien.
+    """
+    respuesta = HttpResponse(content_type='text/csv; charset=utf-8')
+    respuesta['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
+    respuesta.write('\ufeff')
+    escritor = csv.writer(respuesta, delimiter=';')
+    escritor.writerow(encabezados)
+    escritor.writerows(filas)
+    return respuesta
+
+
+@login_required
+def reporte_mascotas_csv(request):
+    """Exporta las mascotas con los mismos filtros de la lista (q, especie, estado)."""
+    query = request.GET.get('q', '').strip()[:100]
+    especie = request.GET.get('especie', '').strip()[:50]
+    estado = request.GET.get('estado', '').strip()
+    try:
+        mascotas = filtrar_por_dueno(
+            Mascota.objects.select_related('dueno').annotate(
+                total_vacunas=Count('vacunas', distinct=True), total_citas=Count('citas', distinct=True),
+            ),
+            request.user, ruta='dueno__user',
+        )
+        if query:
+            mascotas = mascotas.filter(nombre__icontains=query)
+        if especie:
+            mascotas = mascotas.filter(especie__iexact=especie)
+        if estado == 'al_dia':
+            mascotas = mascotas.filter(vacunado=True, alergico=False)
+        elif estado == 'pendiente':
+            mascotas = mascotas.filter(vacunado=False, alergico=False)
+        elif estado == 'alergia':
+            mascotas = mascotas.filter(alergico=True)
+        estados = {'al_dia': 'Al día', 'pendiente': 'Pendiente', 'alergia': 'Alergia'}
+        filas = [
+            [m.nombre, m.especie, m.raza or '', m.edad, estados[m.estado_vacunacion],
+             m.dueno.nombre if m.dueno else '', (m.dueno.email or '') if m.dueno else '',
+             m.total_vacunas, m.total_citas]
+            for m in mascotas
+        ]
+    except DatabaseError:
+        logger.exception('Error al exportar mascotas')
+        messages.error(request, 'No se pudo generar el reporte. ' + ERROR_BD)
+        return redirect('mascotas:lista')
+    return _respuesta_csv(
+        f'mascotas-{timezone.localdate():%Y-%m-%d}.csv',
+        ['Nombre', 'Especie', 'Raza', 'Edad', 'Vacunación', 'Dueño', 'Correo dueño', 'Vacunas', 'Citas'],
+        filas,
+    )
+
+
+@login_required
+@permission_required('mascotas.view_factura', raise_exception=True)
+def reporte_facturas_csv(request):
+    """Exporta las facturas del mes indicado (?mes=AAAA-MM) o todas si no se indica."""
+    mes = request.GET.get('mes', '').strip()[:7]
+    try:
+        facturas = _facturas_visibles(request.user)
+        if len(mes) == 7 and mes[4] == '-' and mes.replace('-', '').isdigit():
+            facturas = facturas.filter(fecha__year=int(mes[:4]), fecha__month=int(mes[5:]))
+        filas = [
+            [f.numero, f.fecha.strftime('%d/%m/%Y'), f.dueno.nombre, f.mascota.nombre if f.mascota else '',
+             f.get_estado_display(), f.get_metodo_pago_display(), f.neto, f.iva, f.total]
+            for f in facturas
+        ]
+    except DatabaseError:
+        logger.exception('Error al exportar facturas')
+        messages.error(request, 'No se pudo generar el reporte. ' + ERROR_BD)
+        return redirect('mascotas:lista_facturas')
+    return _respuesta_csv(
+        f'facturas-{mes or "todas"}.csv',
+        ['Número', 'Fecha', 'Dueño', 'Mascota', 'Estado', 'Método de pago', 'Neto', 'IVA', 'Total'],
+        filas,
     )
 

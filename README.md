@@ -182,6 +182,21 @@ para que la clínica gestione a sus mascotas/pacientes.
   muestra los montos como `$15.000`.
 - **Admin** de `Factura` con las líneas de detalle en la misma pantalla.
 
+### JO5 — Dashboard y reportes
+
+- **Panel de inicio** (`/mascotas/panel/`, ahora es la página que se abre al
+  iniciar sesión): total de mascotas, pendientes de vacuna, citas de hoy y
+  próximas, refuerzos vencidos/próximos, agenda del día, gráfico de barras
+  del estado de vacunación y de mascotas por especie.
+- **Ingresos**: pagado en el mes, total por cobrar y barras de los últimos 6
+  meses. Este bloque solo aparece a quien tiene el permiso `view_factura`.
+- Todo el panel usa `filtrar_por_dueno`: un cliente ve solo sus números.
+- **Reportes CSV para Excel** (separador `;` y BOM UTF-8 para tildes y ñ):
+  - `/mascotas/reportes/mascotas.csv`: respeta los filtros de la lista
+    (nombre, especie, estado) e incluye dueño, correo, n° de vacunas y citas.
+  - `/mascotas/reportes/facturas.csv?mes=AAAA-MM`: número, fecha, dueño,
+    estado, método de pago, neto, IVA y total.
+
 ## Cómo correrlo
 
 ```bash
