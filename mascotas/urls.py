@@ -48,6 +48,13 @@ urlpatterns = [
     path('facturas/<int:pk>/estado/', views.cambiar_estado_factura, name='estado_factura'),
     path('facturas/<int:pk>/eliminar/', views.eliminar_factura, name='eliminar_factura'),
 
+    # ── Recetas ──
+    path('recetas/', views.listar_recetas, name='recetas'),
+    path('recetas/nueva/', views.crear_receta, name='crear_receta'),
+    path('recetas/<int:pk>/editar/', views.editar_receta, name='editar_receta'),
+    path('recetas/<int:pk>/eliminar/', views.eliminar_receta, name='eliminar_receta'),
+    path('recetas/<int:pk>/avisar/', views.avisar_receta_lista, name='avisar_receta'),
+
     # ── Dashboard y reportes (JO5) ──
     path('panel/', views.dashboard, name='dashboard'),
     path('reportes/mascotas.csv', views.reporte_mascotas_csv, name='reporte_mascotas'),

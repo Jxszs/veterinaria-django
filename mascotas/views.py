@@ -1,9 +1,12 @@
 import csv
 import logging
-from datetime import date, time
+from datetime import date, datetime, time, timedelta
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
+from django.core.mail import send_mail
+from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import DatabaseError, transaction
 from django.db.models import Count, F, Q
 from django.http import HttpResponse
@@ -12,13 +15,19 @@ from django.utils import timezone
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
-from .models import Cita, Dueño, Factura, HistorialMedico, Mascota, Producto, Vacuna
+from .models import (
+    Cita, Dueño, Factura, HistorialMedico, Mascota, Producto, Receta, Vacuna,
+)
 from .forms import (
     AjusteStockForm, CitaForm, DetalleFacturaFormSet, DuenoForm, FacturaForm,
-    HistorialMedicoForm, MascotaForm, ProductoForm, VacunaForm,
+    HistorialMedicoForm, MascotaForm, ProductoForm, RecetaForm, VacunaForm,
 )
-from .alertas import enviar_recordatorios, mascotas_sin_vacunas, vacunas_con_refuerzo_pendiente
-from .models import DIAS_AVISO_VACUNA
+from .alertas import (
+    citas_para_recordar, enviar_recordatorios, enviar_recordatorios_citas,
+    enviar_recordatorios_recetas, mascotas_sin_vacunas, recetas_para_avisar,
+    vacunas_con_refuerzo_pendiente,
+)
+from .models import DIAS_AVISO_VACUNA, HORAS_AVISO_CITA
 from .permisos import filtrar_por_dueno
 from .reportes import carnet_vacunas_pdf
 from .templatetags.veterinaria_extras import formato_clp
@@ -65,7 +74,13 @@ def listar_mascotas(request):
         elif estado == 'alergia':
             mascotas = mascotas.filter(alergico=True)
 
-        contexto['mascotas'] = list(mascotas)
+        # Los filtros se conservan al cambiar de página.
+        conserva = ''
+        for clave, valor in (('q', query), ('especie', especie), ('estado', estado)):
+            if valor:
+                conserva += f'&{clave}={valor}'
+        contexto.update(_paginar(request, mascotas, conserva))
+        contexto['mascotas'] = list(contexto['page_obj'].object_list)
         contexto['especies'] = list(
             visibles.order_by('especie').values_list('especie', flat=True).distinct()
         )
@@ -84,7 +99,8 @@ def listar_mascotas(request):
 def crear_mascota(request):
     """Alta de una nueva mascota mediante un formulario web. Solo Administradores."""
     if request.method == 'POST':
-        form = MascotaForm(request.POST)
+        # request.FILES lleva la foto; sin ese segundo argumento se pierde.
+        form = MascotaForm(request.POST, request.FILES)
         if form.is_valid():
             try:
                 mascota = form.save()
@@ -109,7 +125,8 @@ def editar_mascota(request, pk):
         filtrar_por_dueno(Mascota.objects.all(), request.user, ruta='dueno__user'), pk=pk
     )
     if request.method == 'POST':
-        form = MascotaForm(request.POST, instance=mascota)
+        # request.FILES lleva la foto; sin ese segundo argumento se pierde.
+        form = MascotaForm(request.POST, request.FILES, instance=mascota)
         if form.is_valid():
             try:
                 form.save()
@@ -179,6 +196,13 @@ def _linea_de_tiempo(mascota):
             'detalle': f'{registro.veterinario} — {registro.tratamiento or "sin tratamiento indicado"}',
             'objeto': registro,
         })
+    for receta in Receta.objects.filter(cita__mascota=mascota):
+        eventos.append({
+            'fecha': receta.fecha, 'hora': None, 'tipo': 'receta', 'icono': '💊',
+            'titulo': f'Receta: {receta.medicamento}',
+            'detalle': f'{receta.dosis} — {receta.duracion_dias} día(s)',
+            'objeto': receta,
+        })
     # Orden: fecha y hora descendente (los eventos sin hora van al final del día).
     eventos.sort(key=lambda e: (e['fecha'], e['hora'] or time.min), reverse=True)
     return eventos
@@ -206,6 +230,44 @@ def ficha_mascota(request, pk):
         logger.exception('Error al cargar la ficha de la mascota %s', pk)
         messages.error(request, 'No se pudo cargar la ficha completa. ' + ERROR_BD)
     return render(request, 'mascotas/mascota_ficha.html', contexto)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Paginación (Criterio 2.1.3 — READ: "muestra + paginación")
+# ────────────────────────────────────────────────────────────────────────────────
+
+# Registros por página en las listas con muchos elementos.
+POR_PAGINA = 10
+
+
+def _paginar(request, queryset, url_sin_pagina):
+    """
+    Pagina un queryset y deja en el contexto `page_obj` y `paginacion`.
+
+    El número de página se lee de ?pagina=N. Un número fuera de rango no
+    rompe la vista: se cae en la última (o en la primera) página válida.
+    """
+    paginator = Paginator(queryset, POR_PAGINA)
+    numero = request.GET.get('pagina')
+    try:
+        page_obj = paginator.page(numero)
+    except PageNotAnInteger:
+        page_obj = paginator.page(1)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages)
+    return {
+        'page_obj': page_obj,
+        'paginacion': paginator,
+        'pagina_anterior': (
+            f'?pagina={page_obj.previous_page_number()}{url_sin_pagina}'
+            if page_obj.has_previous() else None
+        ),
+        'pagina_siguiente': (
+            f'?pagina={page_obj.next_page_number()}{url_sin_pagina}'
+            if page_obj.has_next() else None
+        ),
+        'total_registros': paginator.count,
+    }
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -284,7 +346,9 @@ def listar_duenos(request):
                 Q(nombre__icontains=query) | Q(email__icontains=query)
                 | Q(user__username__icontains=query)
             )
-        contexto['duenos'] = list(duenos)
+        conserva = f'&q={query}' if query else ''
+        contexto.update(_paginar(request, duenos, conserva))
+        contexto['duenos'] = list(contexto['page_obj'].object_list)
     except DatabaseError:
         logger.exception('Error al listar dueños')
         messages.error(request, 'No se pudieron cargar los dueños. ' + ERROR_BD)
@@ -360,7 +424,14 @@ def listar_citas(request):
             citas = citas.filter(fecha__gte=hoy, estado='programada')
         elif cuando == 'pasadas':
             citas = citas.filter(fecha__lt=hoy).order_by('-fecha', '-hora')
-        contexto['citas'] = list(citas)
+
+        # Los filtros se conservan al cambiar de página.
+        conserva = ''
+        for clave, valor in (('q', query), ('estado', estado), ('cuando', cuando)):
+            if valor:
+                conserva += f'&{clave}={valor}'
+        contexto.update(_paginar(request, citas, conserva))
+        contexto['citas'] = list(contexto['page_obj'].object_list)
     except DatabaseError:
         logger.exception('Error al listar citas')
         messages.error(request, 'No se pudieron cargar las citas. ' + ERROR_BD)
@@ -489,7 +560,14 @@ def listar_historial(request):
             historial = historial.filter(mascota__nombre__icontains=query)
         if mascota_id:
             historial = historial.filter(mascota__pk=mascota_id)
-        contexto['historial'] = list(historial)
+
+        # Los filtros se conservan al cambiar de página.
+        conserva = ''
+        for clave, valor in (('q', query), ('mascota', mascota_id)):
+            if valor:
+                conserva += f'&{clave}={valor}'
+        contexto.update(_paginar(request, historial, conserva))
+        contexto['historial'] = list(contexto['page_obj'].object_list)
     except DatabaseError:
         logger.exception('Error al listar historial')
         messages.error(request, 'No se pudo cargar el historial. ' + ERROR_BD)
@@ -574,7 +652,14 @@ def listar_vacunas(request):
             vacunas = vacunas.filter(mascota__nombre__icontains=query)
         if tipo:
             vacunas = vacunas.filter(tipo__iexact=tipo)
-        contexto['vacunas'] = list(vacunas)
+
+        # Los filtros se conservan al cambiar de página.
+        conserva = ''
+        for clave, valor in (('q', query), ('tipo', tipo)):
+            if valor:
+                conserva += f'&{clave}={valor}'
+        contexto.update(_paginar(request, vacunas, conserva))
+        contexto['vacunas'] = list(contexto['page_obj'].object_list)
     except DatabaseError:
         logger.exception('Error al listar vacunas')
         messages.error(request, 'No se pudieron cargar las vacunas. ' + ERROR_BD)
@@ -642,7 +727,11 @@ def alertas_vacunas(request):
     Refuerzos vencidos o por vencer y mascotas pendientes sin ninguna vacuna.
     Un cliente solo ve las alertas de sus mascotas.
     """
-    contexto = {'vencidas': [], 'proximas': [], 'sin_vacunas': [], 'dias_aviso': DIAS_AVISO_VACUNA}
+    contexto = {
+        'vencidas': [], 'proximas': [], 'sin_vacunas': [],
+        'citas_proximas': [], 'recetas_sin_avisar': [],
+        'dias_aviso': DIAS_AVISO_VACUNA, 'horas_aviso_cita': HORAS_AVISO_CITA,
+    }
     try:
         pendientes = vacunas_con_refuerzo_pendiente(
             queryset=filtrar_por_dueno(Vacuna.objects.all(), request.user)
@@ -653,6 +742,23 @@ def alertas_vacunas(request):
         contexto['sin_vacunas'] = list(mascotas_sin_vacunas(
             filtrar_por_dueno(Mascota.objects.all(), request.user, ruta='dueno__user')
         ))
+        # Citas dentro de la ventana de aviso que aún no se avisaron.
+        ahora = timezone.localtime()
+        limite = ahora + timedelta(hours=HORAS_AVISO_CITA)
+        for cita in filtrar_por_dueno(Cita.objects.all(), request.user):
+            if cita.estado != 'programada' or cita.alerta_enviada_el:
+                continue
+            momento = timezone.make_aware(
+                datetime.combine(cita.fecha, cita.hora), timezone.get_current_timezone()
+            )
+            if ahora <= momento <= limite:
+                contexto['citas_proximas'].append(cita)
+        # Recetas indicadas que todavía no se le avisó al dueño.
+        contexto['recetas_sin_avisar'] = list(
+            recetas_para_avisar(
+                filtrar_por_dueno(Receta.objects.all(), request.user, ruta='cita__mascota__dueno__user')
+            )
+        )
     except DatabaseError:
         logger.exception('Error al calcular alertas de vacunas')
         messages.error(request, 'No se pudieron calcular las alertas. ' + ERROR_BD)
@@ -733,10 +839,19 @@ def listar_facturas(request):
             facturas = facturas.filter(estado=estado)
         if len(mes) == 7 and mes[4] == '-' and mes.replace('-', '').isdigit():
             facturas = facturas.filter(fecha__year=int(mes[:4]), fecha__month=int(mes[5:]))
-        facturas = list(facturas)
-        contexto['facturas'] = facturas
-        contexto['total_pendiente'] = sum(f.total for f in facturas if f.estado == 'pendiente')
-        contexto['total_pagado'] = sum(f.total for f in facturas if f.estado == 'pagada')
+
+        # Los totales son de toda la consulta, no solo de la página visible.
+        todas = list(facturas)
+        contexto['total_pendiente'] = sum(f.total for f in todas if f.estado == 'pendiente')
+        contexto['total_pagado'] = sum(f.total for f in todas if f.estado == 'pagada')
+
+        # Los filtros se conservan al cambiar de página.
+        conserva = ''
+        for clave, valor in (('q', query), ('estado', estado), ('mes', mes)):
+            if valor:
+                conserva += f'&{clave}={valor}'
+        contexto.update(_paginar(request, facturas, conserva))
+        contexto['facturas'] = list(contexto['page_obj'].object_list)
     except DatabaseError:
         logger.exception('Error al listar facturas')
         messages.error(request, 'No se pudieron cargar las facturas. ' + ERROR_BD)
@@ -935,6 +1050,14 @@ def dashboard(request):
             productos = Producto.objects.filter(activo=True)
             contexto['productos_rojo'] = sum(1 for p in productos if p.semaforo == 'rojo')
             contexto['productos_amarillo'] = sum(1 for p in productos if p.semaforo == 'amarillo')
+
+        if user.has_perm('mascotas.view_receta'):
+            recetas = filtrar_por_dueno(
+                Receta.objects.select_related('cita', 'cita__mascota'), user,
+                ruta='cita__mascota__dueno__user',
+            )
+            contexto['recetas_en_curso'] = recetas.filter(fecha__lte=hoy).count()
+            contexto['recetas_por_avisar'] = recetas.filter(receta_lista_el__isnull=True).count()
     except DatabaseError:
         logger.exception('Error al cargar el dashboard')
         messages.error(request, 'No se pudieron cargar los indicadores. ' + ERROR_BD)
@@ -1049,9 +1172,20 @@ def listar_inventario(request):
             contexto['conteo'][producto.semaforo] += 1
         if color in ('rojo', 'amarillo', 'verde'):
             productos = [p for p in productos if p.semaforo == color]
-        # Primero lo urgente: rojo, amarillo y luego verde.
+        # Primero lo urgente: rojo, amarillo y luego verde. El orden se calcula
+        # en Python porque el semáforo es una propiedad, no una columna.
         orden = {'rojo': 0, 'amarillo': 1, 'verde': 2}
-        contexto['productos'] = sorted(productos, key=lambda p: (orden[p.semaforo], p.nombre))
+        productos = sorted(productos, key=lambda p: (orden[p.semaforo], p.nombre))
+
+        # Los filtros se conservan al cambiar de página.
+        conserva = ''
+        for clave, valor in (('q', query), ('categoria', categoria), ('semaforo', color)):
+            if valor:
+                conserva += f'&{clave}={valor}'
+        if ver_inactivos:
+            conserva += '&inactivos=1'
+        contexto.update(_paginar(request, productos, conserva))
+        contexto['productos'] = list(contexto['page_obj'].object_list)
     except DatabaseError:
         logger.exception('Error al listar inventario')
         messages.error(request, 'No se pudo cargar el inventario. ' + ERROR_BD)
@@ -1121,4 +1255,132 @@ def ajustar_stock(request, pk):
             f'{tipo.capitalize()} de {cantidad} {producto.unidad} en "{producto.nombre}". Stock actual: {producto.stock}.',
         )
     return redirect('mascotas:inventario')
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Recetas
+# ────────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@permission_required('mascotas.view_receta', raise_exception=True)
+def listar_recetas(request):
+    """
+    Lista de recetas, filtrada por dueño: el personal ve todas y un cliente
+    solo las de sus mascotas. Se pagina para no cargar todo de una vez.
+    """
+    estado = request.GET.get('estado', '').strip()
+    contexto = {'estado_seleccionado': estado, 'recetas': [], 'total_registros': 0}
+    try:
+        recetas = filtrar_por_dueno(
+            Receta.objects.select_related('cita', 'cita__mascota'),
+            request.user,
+            ruta='cita__mascota__dueno__user',
+        )
+        if estado == 'en_curso':
+            recetas = recetas.filter(fecha__lte=timezone.localdate())
+        elif estado == 'vencidas':
+            recetas = recetas.filter(fecha__lt=timezone.localdate())
+        recetas = recetas.order_by('-fecha', '-id')
+
+        # Los filtros se conservan al cambiar de página.
+        conserva = ''
+        if estado:
+            conserva = f'&estado={estado}'
+        contexto.update(_paginar(request, recetas, conserva))
+        contexto['recetas'] = list(contexto['page_obj'].object_list)
+    except DatabaseError:
+        logger.exception('Error al listar recetas')
+        messages.error(request, ERROR_BD)
+    return render(request, 'mascotas/receta_list.html', contexto)
+
+
+@login_required
+@permission_required('mascotas.add_receta', raise_exception=True)
+def crear_receta(request):
+    """Alta de una receta. Solo quien puede gestionarindicaciones clínicas."""
+    return _guardar_formulario(
+        request, RecetaForm, 'mascotas/receta_form.html', 'mascotas:recetas',
+        lambda r: (
+            f'Receta de {r.medicamento} registrada para '
+            f'{r.cita.mascota.nombre}.'
+        ),
+        initial=_mascota_inicial(request),
+    )
+
+
+@login_required
+@permission_required('mascotas.change_receta', raise_exception=True)
+def editar_receta(request, pk):
+    """Edición de una receta existente."""
+    receta = get_object_or_404(
+        filtrar_por_dueno(
+            Receta.objects.select_related('cita', 'cita__mascota'), request.user,
+            ruta='cita__mascota__dueno__user',
+        ),
+        pk=pk,
+    )
+    return _guardar_formulario(
+        request, RecetaForm, 'mascotas/receta_form.html', 'mascotas:recetas',
+        lambda r: f'Receta de {r.medicamento} actualizada.',
+        instancia=receta,
+    )
+
+
+@login_required
+@permission_required('mascotas.delete_receta', raise_exception=True)
+def eliminar_receta(request, pk):
+    """Eliminación de una receta, con confirmación previa."""
+    receta = get_object_or_404(
+        filtrar_por_dueno(
+            Receta.objects.select_related('cita', 'cita__mascota'), request.user,
+            ruta='cita__mascota__dueno__user',
+        ),
+        pk=pk,
+    )
+    return _confirmar_eliminacion(
+        request, receta, 'mascotas/receta_confirm_delete.html', 'mascotas:recetas',
+        f'la receta de "{receta.medicamento}"',
+    )
+
+
+@login_required
+@permission_required('mascotas.change_receta', raise_exception=True)
+@require_POST
+def avisar_receta_lista(request, pk):
+    """
+    Avisa por correo al dueño de ESTA receta que ya está lista para retirar.
+    Solo acepta POST con token CSRF, y solo manda un correo a esa persona.
+    """
+    receta = get_object_or_404(Receta.objects.select_related('cita', 'cita__mascota'), pk=pk)
+    dueno = receta.cita.mascota.dueno
+    if not dueno or not dueno.email:
+        messages.error(request, 'El dueño de esta mascota no tiene correo registrado.')
+        return redirect('mascotas:recetas')
+    if receta.receta_lista_el:
+        messages.warning(request, f'A esta receta ya se le avisó antes ({receta.receta_lista_el:%d/%m/%Y %H:%M}).')
+        return redirect('mascotas:recetas')
+    try:
+        send_mail(
+            subject=f'Receta lista para {receta.cita.mascota.nombre}',
+            message=(
+                f'Hola {dueno.nombre}:\n\n'
+                f'La receta de {receta.cita.mascota.nombre} ya está lista '
+                f'para retirar en la clínica.\n\n'
+                f'Medicamento: {receta.medicamento}\n'
+                f'Dosis: {receta.dosis}\n'
+                f'Duración: {receta.duracion_dias} día(s)\n\n'
+                'Recuerda pasar por ella en horario de atención.\n\n'
+                'Saludos,\nClínica Veterinaria'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[dueno.email],
+        )
+    except Exception:
+        logger.exception('No se pudo avisar la receta %s', receta.pk)
+        messages.error(request, 'No se pudo enviar el aviso. Revisa la configuración de correo.')
+    else:
+        receta.receta_lista_el = timezone.localtime()
+        receta.save(update_fields=['receta_lista_el'])
+        messages.success(request, f'Aviso enviado a {dueno.email}: la receta está lista.')
+    return redirect('mascotas:recetas')
 
