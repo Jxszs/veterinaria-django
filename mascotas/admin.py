@@ -1,13 +1,20 @@
 from django.contrib import admin
-from django.utils.html import format_html
 from django.contrib.admin.actions import delete_selected
+from django.utils.html import format_html
 
-from .templatetags.veterinaria_extras import formato_clp
 from .models import (
-    Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Producto,
-    Receta, Vacuna,
+    Cita,
+    DetalleFactura,
+    Dueño,
+    Factura,
+    HistorialMedico,
+    Mascota,
+    Producto,
+    Receta,
+    Vacuna,
 )
 from .permisos import filtrar_por_dueno
+from .templatetags.veterinaria_extras import formato_clp
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -25,7 +32,13 @@ class FiltradoPorDuenoMixin:
     ruta_dueno = 'mascota__dueno__user'
 
     def get_queryset(self, request):
-        return filtrar_por_dueno(super().get_queryset(request), request.user, ruta=self.ruta_dueno)
+        # admin.ModelAdmin.get_queryset() en vez de super(): este mixin no
+        # hereda de ModelAdmin, asi que super() no resolveria el metodo.
+        return filtrar_por_dueno(
+            admin.ModelAdmin.get_queryset(self, request),  # type: ignore[arg-type]
+            request.user,
+            ruta=self.ruta_dueno,
+        )
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -209,12 +222,11 @@ class HistorialMedicoAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
         }),
     )
 
+    @admin.display(description='Tratamiento', ordering='tratamiento')
     def tratamiento_resumido(self, obj):
         if obj.tratamiento:
             return obj.tratamiento[:50] + ('...' if len(obj.tratamiento) > 50 else '')
         return '—'
-    tratamiento_resumido.short_description = 'Tratamiento'
-    tratamiento_resumido.admin_order_field = 'tratamiento'
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -392,4 +404,3 @@ class RecetaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
     @admin.display(description='Estado', boolean=True)
     def estado_receta(self, obj):
         return obj.en_curso
-
