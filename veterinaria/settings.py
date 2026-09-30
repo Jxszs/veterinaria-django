@@ -166,6 +166,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Archivos que sube el usuario (fotos de las mascotas). Sin MEDIA_ROOT Django
+# no tiene dónde guardar el archivo y la foto se pierde al guardar el registro.
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
