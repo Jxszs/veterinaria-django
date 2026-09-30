@@ -22,7 +22,6 @@ test_db.sqlite3
 media/
 staticfiles/
 local_settings.py
-
 # Respaldo de datos (contiene datos reales, no va al repo)
 backup_sql/
 
