@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% load veterinaria_extras %}
+{% block title %}Facturas - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Facturas</h1>
+    {% if perms.mascotas.add_factura %}
+        <a href="{% url 'mascotas:crear_factura' %}" class="btn btn-success">+ Nueva factura</a>
+    {% endif %}
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-sm-6">
+        <div class="card"><div class="card-body">
+            <div class="text-muted small">Por cobrar (en este listado)</div>
+            <div class="h4 mb-0 text-danger">{{ total_pendiente|clp }}</div>
+        </div></div>
+    </div>
+    <div class="col-sm-6">
+        <div class="card"><div class="card-body">
+            <div class="text-muted small">Pagado (en este listado)</div>
+            <div class="h4 mb-0 text-success">{{ total_pagado|clp }}</div>
+        </div></div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label mb-1" for="q">Dueño o mascota</label>
+                <input type="text" id="q" name="q" value="{{ query }}" class="form-control" placeholder="Ej: González">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1" for="estado">Estado</label>
+                <select id="estado" name="estado" class="form-select">
+                    <option value="">Todos</option>
+                    {% for valor, texto in estados %}
+                        <option value="{{ valor }}" {% if valor == estado_seleccionado %}selected{% endif %}>{{ texto }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label mb-1" for="mes">Mes</label>
+                <input type="month" id="mes" name="mes" value="{{ mes }}" class="form-control">
+            </div>
+            <div class="col-md-2 d-grid">
+                <button type="submit" class="btn btn-primary">Filtrar</button>
+            </div>
+        </form>
+        {% if query or estado_seleccionado or mes %}
+            <a href="{% url 'mascotas:lista_facturas' %}" class="d-inline-block mt-2 small">Limpiar filtros</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered align-middle bg-white">
+        <thead class="table-dark">
+            <tr><th>N°</th><th>Fecha</th><th>Dueño</th><th>Mascota</th><th class="text-end">Total</th><th>Estado</th></tr>
+        </thead>
+        <tbody>
+            {% for factura in facturas %}
+                <tr>
+                    <td><a href="{% url 'mascotas:detalle_factura' factura.pk %}">{{ factura.numero }}</a></td>
+                    <td>{{ factura.fecha|date:"d/m/Y" }}</td>
+                    <td>{{ factura.dueno.nombre }}</td>
+                    <td>{{ factura.mascota.nombre|default:"—" }}</td>
+                    <td class="text-end">{{ factura.total|clp }}</td>
+                    <td>{% include 'mascotas/_estado_factura.html' %}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="6" class="text-center text-muted py-4">No hay facturas que coincidan con el filtro.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

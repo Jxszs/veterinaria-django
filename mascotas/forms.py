@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.utils.html import strip_tags
 import re
 
-from .models import Dueño, Mascota, Cita, HistorialMedico, Vacuna
+from .models import Cita, DetalleFactura, Dueño, Factura, HistorialMedico, Mascota, Vacuna
 
 # Solo letras (con tildes y ñ), espacios, guiones y apóstrofes.
 SOLO_LETRAS = re.compile(r"^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]+$")
@@ -439,3 +439,99 @@ class VacunaForm(forms.ModelForm):
         if commit:
             vacuna.save()
         return vacuna
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Facturación (JO4)
+# ────────────────────────────────────────────────────────────────────────────────
+
+class FacturaForm(forms.ModelForm):
+    """Datos generales de la factura. Las líneas van en DetalleFacturaFormSet."""
+
+    class Meta:
+        model = Factura
+        fields = ['dueno', 'mascota', 'cita', 'fecha', 'estado', 'metodo_pago', 'observaciones']
+        widgets = {
+            'dueno': forms.Select(attrs={'class': 'form-select'}),
+            'mascota': forms.Select(attrs={'class': 'form-select'}),
+            'cita': forms.Select(attrs={'class': 'form-select'}),
+            'fecha': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}, format='%Y-%m-%d'),
+            'estado': forms.Select(attrs={'class': 'form-select'}),
+            'metodo_pago': forms.Select(attrs={'class': 'form-select'}),
+            'observaciones': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+        }
+        labels = {
+            'dueno': 'Dueño',
+            'mascota': 'Mascota atendida (opcional)',
+            'cita': 'Cita asociada (opcional)',
+            'metodo_pago': 'Método de pago',
+        }
+        error_messages = {
+            'dueno': {'required': 'Debes elegir a quién se le cobra.'},
+            'fecha': {'required': 'Debes ingresar la fecha.', 'invalid': 'Fecha no válida.'},
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['metodo_pago'].choices = [('', 'Sin pagar aún')] + Factura.METODO_PAGO_CHOICES
+        self.fields['cita'].queryset = Cita.objects.select_related('mascota').order_by('-fecha', '-hora')
+
+    def clean_fecha(self):
+        fecha = self.cleaned_data.get('fecha')
+        if fecha and fecha > timezone.localdate():
+            raise forms.ValidationError('La factura no puede tener fecha futura.')
+        return fecha
+
+    def clean_observaciones(self):
+        return limpiar_texto(self.cleaned_data.get('observaciones')) or None
+
+    def save(self, commit=True):
+        factura = super().save(commit=False)
+        # La fecha de pago se completa sola al marcarla como pagada.
+        if factura.estado == 'pagada' and not factura.fecha_pago:
+            factura.fecha_pago = timezone.localdate()
+        elif factura.estado != 'pagada':
+            factura.fecha_pago = None
+        if commit:
+            factura.save()
+        return factura
+
+
+class DetalleFacturaForm(forms.ModelForm):
+    class Meta:
+        model = DetalleFactura
+        fields = ['descripcion', 'cantidad', 'precio_unitario']
+        widgets = {
+            'descripcion': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: Consulta general'}),
+            'cantidad': forms.NumberInput(attrs={'class': 'form-control', 'min': 1, 'max': 999}),
+            'precio_unitario': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'placeholder': 'Ej: 15000'}),
+        }
+        error_messages = {
+            'descripcion': {'required': 'Falta la descripción.'},
+            'precio_unitario': {'required': 'Falta el precio.', 'invalid': 'El precio debe ser un número entero.'},
+            'cantidad': {'invalid': 'La cantidad debe ser un número entero.'},
+        }
+
+    def has_changed(self):
+        # Una fila nueva sin descripción ni precio se considera vacía y se ignora,
+        # aunque el campo cantidad traiga su valor por defecto.
+        if not self.instance.pk and not any(
+            (self.data.get(self.add_prefix(campo)) or '').strip()
+            for campo in ('descripcion', 'precio_unitario')
+        ):
+            return False
+        return super().has_changed()
+
+    def clean_descripcion(self):
+        descripcion = limpiar_texto(self.cleaned_data.get('descripcion'))
+        if len(descripcion) < 3:
+            raise forms.ValidationError('La descripción debe tener al menos 3 caracteres.')
+        return descripcion
+
+
+# Varias líneas de detalle en el mismo formulario; al menos una es obligatoria.
+DetalleFacturaFormSet = forms.inlineformset_factory(
+    Factura, DetalleFactura, form=DetalleFacturaForm,
+    extra=3, min_num=1, validate_min=True, can_delete=True,
+)
+

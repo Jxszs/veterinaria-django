@@ -1,7 +1,8 @@
 from django.contrib import admin
 from django.contrib.admin.actions import delete_selected
 
-from .models import Mascota, Cita, HistorialMedico, Vacuna
+from .templatetags.veterinaria_extras import formato_clp
+from .models import Cita, DetalleFactura, Factura, HistorialMedico, Mascota, Vacuna
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -211,3 +212,30 @@ class VacunaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
     )
 
     readonly_fields = ('fecha_aplicacion',)
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Admin de Factura (JO4) — con sus líneas de detalle en la misma pantalla
+# ────────────────────────────────────────────────────────────────────────────────
+
+class DetalleFacturaInline(admin.TabularInline):
+    model = DetalleFactura
+    extra = 1
+    min_num = 1
+
+
+@admin.register(Factura)
+class FacturaAdmin(FiltradoPorDuenoMixin, admin.ModelAdmin):
+    ruta_dueno = 'dueno__user'
+    list_display = ('numero', 'fecha', 'dueno', 'mascota', 'estado', 'metodo_pago', 'total_clp')
+    list_filter = ('estado', 'metodo_pago', 'fecha')
+    search_fields = ('dueno__nombre', 'mascota__nombre', 'observaciones')
+    date_hierarchy = 'fecha'
+    ordering = ('-fecha', '-id')
+    inlines = [DetalleFacturaInline]
+    list_select_related = ('dueno', 'mascota')
+
+    @admin.display(description='Total')
+    def total_clp(self, obj):
+        return formato_clp(obj.total)
+

@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% load veterinaria_extras %}
+{% block title %}Factura {{ factura.numero }}{% endblock %}
+
+{% block content %}
+<a href="{% url 'mascotas:lista_facturas' %}" class="small">← Volver a facturas</a>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-1 mb-3">
+    <h1 class="h3 mb-0">Factura {{ factura.numero }} {% include 'mascotas/_estado_factura.html' %}</h1>
+    <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-outline-dark btn-sm" onclick="window.print()">Imprimir</button>
+        {% if perms.mascotas.change_factura and factura.estado != 'anulada' %}
+            <a href="{% url 'mascotas:editar_factura' factura.pk %}" class="btn btn-outline-primary btn-sm">Editar</a>
+        {% endif %}
+        {% if perms.mascotas.delete_factura and factura.estado == 'anulada' %}
+            <a href="{% url 'mascotas:eliminar_factura' factura.pk %}" class="btn btn-outline-danger btn-sm">Eliminar</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body row">
+        <div class="col-md-6">
+            <div><strong>Dueño:</strong> {{ factura.dueno.nombre }}</div>
+            {% if factura.dueno.email %}<div class="small">{{ factura.dueno.email }}</div>{% endif %}
+            <div><strong>Mascota:</strong>
+                {% if factura.mascota %}<a href="{% url 'mascotas:ficha' factura.mascota.pk %}">{{ factura.mascota.nombre }}</a>{% else %}—{% endif %}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div><strong>Fecha:</strong> {{ factura.fecha|date:"d/m/Y" }}</div>
+            {% if factura.estado == 'pagada' %}
+                <div><strong>Pagada el:</strong> {{ factura.fecha_pago|date:"d/m/Y" }} ({{ factura.get_metodo_pago_display }})</div>
+            {% endif %}
+            {% if factura.observaciones %}<div class="small text-muted mt-1">{{ factura.observaciones }}</div>{% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered bg-white align-middle">
+        <thead class="table-light">
+            <tr><th>Descripción</th><th class="text-end">Cantidad</th><th class="text-end">Precio unitario</th><th class="text-end">Subtotal</th></tr>
+        </thead>
+        <tbody>
+            {% for detalle in factura.detalles.all %}
+                <tr>
+                    <td>{{ detalle.descripcion }}</td>
+                    <td class="text-end">{{ detalle.cantidad }}</td>
+                    <td class="text-end">{{ detalle.precio_unitario|clp }}</td>
+                    <td class="text-end">{{ detalle.subtotal|clp }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr><td colspan="3" class="text-end">Neto</td><td class="text-end">{{ factura.neto|clp }}</td></tr>
+            <tr><td colspan="3" class="text-end">IVA (19%)</td><td class="text-end">{{ factura.iva|clp }}</td></tr>
+            <tr class="fw-bold"><td colspan="3" class="text-end">Total</td><td class="text-end">{{ factura.total|clp }}</td></tr>
+        </tfoot>
+    </table>
+</div>
+
+{% if perms.mascotas.change_factura and factura.estado == 'pendiente' %}
+    <div class="card d-print-none">
+        <div class="card-body d-flex flex-wrap gap-3 align-items-end">
+            <form method="post" action="{% url 'mascotas:estado_factura' factura.pk %}" class="d-flex gap-2 align-items-end">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="pagar">
+                <div>
+                    <label class="form-label mb-1" for="metodo_pago">Método de pago</label>
+                    <select id="metodo_pago" name="metodo_pago" class="form-select" required>
+                        {% for valor, texto in factura.METODO_PAGO_CHOICES %}<option value="{{ valor }}">{{ texto }}</option>{% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-success">Registrar pago</button>
+            </form>
+            <form method="post" action="{% url 'mascotas:estado_factura' factura.pk %}"
+                  onsubmit="return confirm('¿Anular la factura {{ factura.numero }}? No se podrá volver a editar.');">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="anular">
+                <button type="submit" class="btn btn-outline-danger">Anular factura</button>
+            </form>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}

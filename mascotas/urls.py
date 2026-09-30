@@ -39,4 +39,12 @@ urlpatterns = [
     path('vacunas/alertas/enviar/', views.enviar_alertas_vacunas, name='enviar_alertas_vacunas'),
     path('vacunas/<int:pk>/editar/', views.editar_vacuna, name='editar_vacuna'),
     path('vacunas/<int:pk>/eliminar/', views.eliminar_vacuna, name='eliminar_vacuna'),
+
+    # ── Facturación (JO4) ──
+    path('facturas/', views.listar_facturas, name='lista_facturas'),
+    path('facturas/nueva/', views.crear_factura, name='crear_factura'),
+    path('facturas/<int:pk>/', views.detalle_factura, name='detalle_factura'),
+    path('facturas/<int:pk>/editar/', views.editar_factura, name='editar_factura'),
+    path('facturas/<int:pk>/estado/', views.cambiar_estado_factura, name='estado_factura'),
+    path('facturas/<int:pk>/eliminar/', views.eliminar_factura, name='eliminar_factura'),
 ]

@@ -159,6 +159,29 @@ para que la clínica gestione a sus mascotas/pacientes.
   ficha) generado con ReportLab (`mascotas/reportes.py`). Se agregó
   `reportlab` a `requirements.txt`.
 
+### JO4 — Facturación
+
+- **Modelos nuevos** (migración `0008`):
+  - `Factura`: dueño (FK, `PROTECT`: no se puede borrar un dueño con facturas),
+    mascota y cita opcionales (FK), fecha, estado (pendiente / pagada /
+    anulada), método de pago, fecha de pago y observaciones. El número se
+    muestra como `F-000123`.
+  - `DetalleFactura`: líneas de la factura (descripción, cantidad 1–999,
+    precio unitario neto en pesos). El neto, el IVA (19 %) y el total se
+    **calculan** a partir de las líneas; no se escriben a mano.
+- **Formulario con varias líneas** (`inlineformset_factory`): mínimo una línea,
+  las filas vacías se ignoran, y la factura con sus líneas se guarda dentro de
+  `transaction.atomic()` (si algo falla no queda una factura a medias).
+- **Validaciones**: la mascota debe ser del dueño elegido, la cita debe ser de
+  esa mascota, sin fecha futura y una factura pagada exige método de pago.
+- **Flujo de estados**: "Registrar pago" y "Anular" (solo POST + CSRF). Una
+  factura anulada no se edita, y solo se pueden eliminar facturas anuladas.
+- **Vistas**: lista con filtros (dueño/mascota, estado, mes) y totales por cobrar
+  y pagados, detalle imprimible, crear/editar. Un cliente solo ve sus facturas.
+- **Filtro de plantilla `clp`** (`mascotas/templatetags/veterinaria_extras.py`):
+  muestra los montos como `$15.000`.
+- **Admin** de `Factura` con las líneas de detalle en la misma pantalla.
+
 ## Cómo correrlo
 
 ```bash

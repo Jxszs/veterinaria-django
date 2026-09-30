@@ -3,7 +3,7 @@ from datetime import time
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -11,12 +11,16 @@ from django.utils import timezone
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
-from .models import Dueño, Mascota, Cita, HistorialMedico, Vacuna
-from .forms import DuenoForm, MascotaForm, CitaForm, HistorialMedicoForm, VacunaForm
+from .models import Cita, Dueño, Factura, HistorialMedico, Mascota, Vacuna
+from .forms import (
+    CitaForm, DetalleFacturaFormSet, DuenoForm, FacturaForm, HistorialMedicoForm,
+    MascotaForm, VacunaForm,
+)
 from .alertas import enviar_recordatorios, mascotas_sin_vacunas, vacunas_con_refuerzo_pendiente
 from .models import DIAS_AVISO_VACUNA
 from .permisos import filtrar_por_dueno
 from .reportes import carnet_vacunas_pdf
+from .templatetags.veterinaria_extras import formato_clp
 
 
 logger = logging.getLogger(__name__)
@@ -689,4 +693,148 @@ def carnet_vacunas(request, pk):
     nombre = slugify(mascota.nombre) or 'mascota'
     respuesta['Content-Disposition'] = f'attachment; filename="carnet-vacunas-{nombre}.pdf"'
     return respuesta
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Facturación (JO4)
+# ────────────────────────────────────────────────────────────────────────────────
+
+def _facturas_visibles(user):
+    return filtrar_por_dueno(
+        Factura.objects.select_related('dueno', 'mascota').prefetch_related('detalles'),
+        user, ruta='dueno__user',
+    )
+
+
+@login_required
+@permission_required('mascotas.view_factura', raise_exception=True)
+def listar_facturas(request):
+    """Facturas con filtros por dueño/mascota, estado y mes (AAAA-MM)."""
+    query = request.GET.get('q', '').strip()[:100]
+    estado = request.GET.get('estado', '').strip()
+    mes = request.GET.get('mes', '').strip()[:7]
+    contexto = {
+        'facturas': [], 'query': query, 'estado_seleccionado': estado, 'mes': mes,
+        'estados': Factura.ESTADO_CHOICES, 'total_pendiente': 0, 'total_pagado': 0,
+    }
+    try:
+        facturas = _facturas_visibles(request.user)
+        if query:
+            facturas = facturas.filter(Q(dueno__nombre__icontains=query) | Q(mascota__nombre__icontains=query))
+        if estado:
+            facturas = facturas.filter(estado=estado)
+        if len(mes) == 7 and mes[4] == '-' and mes.replace('-', '').isdigit():
+            facturas = facturas.filter(fecha__year=int(mes[:4]), fecha__month=int(mes[5:]))
+        facturas = list(facturas)
+        contexto['facturas'] = facturas
+        contexto['total_pendiente'] = sum(f.total for f in facturas if f.estado == 'pendiente')
+        contexto['total_pagado'] = sum(f.total for f in facturas if f.estado == 'pagada')
+    except DatabaseError:
+        logger.exception('Error al listar facturas')
+        messages.error(request, 'No se pudieron cargar las facturas. ' + ERROR_BD)
+    return render(request, 'mascotas/factura_list.html', contexto)
+
+
+@login_required
+@permission_required('mascotas.view_factura', raise_exception=True)
+def detalle_factura(request, pk):
+    factura = get_object_or_404(_facturas_visibles(request.user), pk=pk)
+    return render(request, 'mascotas/factura_detalle.html', {'factura': factura})
+
+
+def _guardar_factura(request, factura=None):
+    """
+    Guarda la factura y sus líneas juntas. Se usa transaction.atomic: si falla
+    una línea, no queda una factura a medias en la base de datos.
+    """
+    if factura and factura.estado == 'anulada':
+        messages.warning(request, 'Una factura anulada no se puede modificar.')
+        return redirect('mascotas:detalle_factura', pk=factura.pk)
+
+    if request.method == 'POST':
+        form = FacturaForm(request.POST, instance=factura)
+        formset = DetalleFacturaFormSet(request.POST, instance=form.instance)
+        if form.is_valid() and formset.is_valid():
+            try:
+                with transaction.atomic():
+                    factura = form.save()
+                    formset.instance = factura
+                    formset.save()
+            except DatabaseError:
+                logger.exception('Error al guardar factura')
+                messages.error(request, 'No se pudo guardar la factura. ' + ERROR_BD)
+            else:
+                messages.success(request, f'Factura {factura.numero} guardada. Total: {formato_clp(factura.total)}.')
+                return redirect('mascotas:detalle_factura', pk=factura.pk)
+        else:
+            messages.warning(request, 'Revisa los campos marcados en rojo.')
+    else:
+        initial = {}
+        mascota_id = request.GET.get('mascota', '')
+        if not factura and mascota_id.isdigit():
+            mascota = Mascota.objects.filter(pk=mascota_id).first()
+            if mascota:
+                initial = {'mascota': mascota.pk, 'dueno': mascota.dueno_id}
+        form = FacturaForm(instance=factura, initial=initial)
+        formset = DetalleFacturaFormSet(instance=factura or Factura())
+    return render(request, 'mascotas/factura_form.html', {
+        'form': form, 'formset': formset, 'object': factura,
+    })
+
+
+@login_required
+@permission_required('mascotas.add_factura', raise_exception=True)
+def crear_factura(request):
+    return _guardar_factura(request)
+
+
+@login_required
+@permission_required('mascotas.change_factura', raise_exception=True)
+def editar_factura(request, pk):
+    return _guardar_factura(request, get_object_or_404(Factura, pk=pk))
+
+
+@login_required
+@permission_required('mascotas.change_factura', raise_exception=True)
+@require_POST
+def cambiar_estado_factura(request, pk):
+    """Marca como pagada (con método de pago) o anula una factura pendiente."""
+    factura = get_object_or_404(Factura, pk=pk)
+    accion = request.POST.get('accion')
+    if factura.estado != 'pendiente':
+        messages.warning(request, f'La factura ya está {factura.get_estado_display().lower()}.')
+        return redirect('mascotas:detalle_factura', pk=pk)
+    if accion == 'pagar':
+        metodo = request.POST.get('metodo_pago', '')
+        if metodo not in dict(Factura.METODO_PAGO_CHOICES):
+            messages.error(request, 'Elige un método de pago válido.')
+            return redirect('mascotas:detalle_factura', pk=pk)
+        factura.estado, factura.metodo_pago, factura.fecha_pago = 'pagada', metodo, timezone.localdate()
+    elif accion == 'anular':
+        factura.estado = 'anulada'
+    else:
+        messages.error(request, 'Acción no válida.')
+        return redirect('mascotas:detalle_factura', pk=pk)
+    try:
+        factura.save(update_fields=['estado', 'metodo_pago', 'fecha_pago'])
+    except DatabaseError:
+        logger.exception('Error al cambiar estado de la factura %s', pk)
+        messages.error(request, 'No se pudo actualizar la factura. ' + ERROR_BD)
+    else:
+        messages.success(request, f'Factura {factura.numero}: {factura.get_estado_display().lower()}.')
+    return redirect('mascotas:detalle_factura', pk=pk)
+
+
+@login_required
+@permission_required('mascotas.delete_factura', raise_exception=True)
+def eliminar_factura(request, pk):
+    """Solo se pueden borrar facturas anuladas; las demás deben anularse primero."""
+    factura = get_object_or_404(Factura, pk=pk)
+    if factura.estado != 'anulada':
+        messages.warning(request, 'Primero anula la factura; solo se eliminan facturas anuladas.')
+        return redirect('mascotas:detalle_factura', pk=pk)
+    return _confirmar_eliminacion(
+        request, factura, 'mascotas/factura_confirm_delete.html', 'mascotas:lista_facturas',
+        f'la factura {factura.numero}',
+    )
 
