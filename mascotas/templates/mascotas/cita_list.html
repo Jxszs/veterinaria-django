@@ -107,6 +107,8 @@
             </tbody>
         </table>
     </div>
+
+    {% include 'mascotas/_paginacion.html' %}
 {% else %}
     <div class="alert alert-info">No hay citas que coincidan con el filtro.</div>
 {% endif %}

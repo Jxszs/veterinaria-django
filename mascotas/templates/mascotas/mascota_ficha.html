@@ -18,12 +18,25 @@
 
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-    <div>
-        <a href="{% url 'mascotas:lista' %}" class="small">← Volver a mascotas</a>
-        <h1 class="h3 mb-0 mt-1">{{ mascota.nombre }}</h1>
-        <div class="text-muted">
-            {{ mascota.especie }}{% if mascota.raza %} ({{ mascota.raza }}){% endif %},
-            {{ mascota.edad }} año{{ mascota.edad|pluralize }}
+    <div class="d-flex gap-3 align-items-start">
+        {% if mascota.foto %}
+            <img src="{{ mascota.foto.url }}" alt="Foto de {{ mascota.nombre }}"
+                 class="rounded" style="width:110px;height:110px;object-fit:cover;">
+        {% endif %}
+        <div>
+            <a href="{% url 'mascotas:lista' %}" class="small">← Volver a mascotas</a>
+            <h1 class="h3 mb-0 mt-1">{{ mascota.nombre }}</h1>
+            <div class="text-muted">
+                {{ mascota.especie }}{% if mascota.raza %} ({{ mascota.raza }}){% endif %},
+                {{ mascota.edad_texto }}
+                {% if mascota.sexo %} · {{ mascota.sexo }}{% endif %}
+            </div>
+            {% if mascota.peso or mascota.estado != 'activo' %}
+                <div class="text-muted small">
+                    {% if mascota.peso %}{{ mascota.peso }} kg · {% endif %}
+                    {{ mascota.get_estado_display }}
+                </div>
+            {% endif %}
         </div>
     </div>
     <div class="d-flex flex-wrap gap-2">

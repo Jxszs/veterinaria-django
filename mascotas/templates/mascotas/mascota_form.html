@@ -10,7 +10,7 @@
                 <h1 class="h4 mb-3">
                     {% if object %}Editar a "{{ object.nombre }}"{% else %}Registrar nueva mascota{% endif %}
                 </h1>
-                <form method="post" novalidate>
+                <form method="post" enctype="multipart/form-data" novalidate>
                     {% csrf_token %}
                     {% include 'mascotas/_campos_form.html' %}
                     <div class="d-flex gap-2">

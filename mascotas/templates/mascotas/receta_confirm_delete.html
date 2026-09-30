@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Eliminar receta{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <h3 class="h5 mb-0">⚠️ Confirmar eliminación</h3>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-light border">
+                    <p><strong>Mascota:</strong> {{ object.cita.mascota.nombre }}</p>
+                    <p><strong>Medicamento:</strong> {{ object.medicamento }}</p>
+                    <p><strong>Dosis:</strong> {{ object.dosis }}</p>
+                    <p class="mb-0">
+                        <strong>Indicada:</strong>
+                        {{ object.fecha|date:"d/m/Y" }} ({{ object.duracion_dias }} día{{ object.duracion_dias|pluralize }})
+                    </p>
+                </div>
+                <p class="text-danger">
+                    Esta acción no se puede deshacer.
+                </p>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-danger">Eliminar receta</button>
+                        <a href="{% url 'mascotas:recetas' %}" class="btn btn-secondary">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

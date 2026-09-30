@@ -1,0 +1,39 @@
+{% comment %}
+Bloque de paginación reutilizable.
+Espera en el contexto: page_obj, paginacion, pagina_anterior, pagina_siguiente
+y total_registros, que deja el ayudante `_paginar` de `views.py`.
+{% endcomment %}
+{% if paginacion and paginacion.num_pages > 1 %}
+    <nav class="d-flex justify-content-between align-items-center mt-3">
+        <small class="text-muted">
+            Mostrando {{ page_obj.start_index }}–{{ page_obj.end_index }}
+            de {{ total_registros }} registro{{ total_registros|pluralize }}
+            · página {{ page_obj.number }} de {{ paginacion.num_pages }}
+        </small>
+        <ul class="pagination pagination-sm mb-0">
+            <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                <a class="page-link"
+                   href="{% if pagina_anterior %}{{ pagina_anterior }}{% else %}#{% endif %}">Anterior</a>
+            </li>
+            {% for numero in paginacion.page_range %}
+                {% if numero == page_obj.number %}
+                    <li class="page-item active" aria-current="page">
+                        <span class="page-link">{{ numero }}</span>
+                    </li>
+                {% else %}
+                    <li class="page-item">
+                        <a class="page-link" href="?pagina={{ numero }}">{{ numero }}</a>
+                    </li>
+                {% endif %}
+            {% endfor %}
+            <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                <a class="page-link"
+                   href="{% if pagina_siguiente %}{{ pagina_siguiente }}{% else %}#{% endif %}">Siguiente</a>
+            </li>
+        </ul>
+    </nav>
+{% elif total_registros %}
+    <small class="text-muted d-block mt-2">
+        {{ total_registros }} registro{{ total_registros|pluralize }} en total.
+    </small>
+{% endif %}

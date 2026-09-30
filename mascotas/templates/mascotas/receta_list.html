@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block title %}Recetas - Clínica Veterinaria{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Recetas</h1>
+    <div class="d-flex gap-2">
+        <a href="{% url 'mascotas:recetas' %}"
+           class="btn {% if estado_seleccionado %}btn-outline-secondary{% else %}btn-secondary{% endif %}">Todas</a>
+        <a href="?estado=en_curso"
+           class="btn {% if estado_seleccionado == 'en_curso' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">En curso</a>
+        <a href="?estado=vencidas"
+           class="btn {% if estado_seleccionado == 'vencidas' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">Terminadas</a>
+        {% if perms.mascotas.add_receta %}
+            <a href="{% url 'mascotas:crear_receta' %}" class="btn btn-success">+ Nueva receta</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if recetas %}
+    <div class="table-responsive">
+        <table class="table table-bordered align-middle bg-white">
+            <thead class="table-dark">
+                <tr>
+                    <th>Mascota</th>
+                    <th>Medicamento</th>
+                    <th>Dosis</th>
+                    <th>Duración</th>
+                    <th>Fecha</th>
+                    <th>Estado</th>
+                    {% if perms.mascotas.change_receta or perms.mascotas.delete_receta %}
+                        <th>Acciones</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for receta in recetas %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'mascotas:ficha' receta.cita.mascota.pk %}">{{ receta.cita.mascota.nombre }}</a>
+                        </td>
+                        <td>{{ receta.medicamento }}</td>
+                        <td>{{ receta.dosis }}</td>
+                        <td>{{ receta.duracion_dias }} día{{ receta.duracion_dias|pluralize }}</td>
+                        <td>{{ receta.fecha|date:"d/m/Y" }}</td>
+                        <td>
+                            {% if receta.en_curso %}
+                                <span class="badge bg-success">En curso</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Terminada</span>
+                            {% endif %}
+                        </td>
+                        {% if perms.mascotas.change_receta or perms.mascotas.delete_receta %}
+                            <td class="text-nowrap">
+                                {% if perms.mascotas.change_receta and not receta.receta_lista_el %}
+                                    <form method="post" action="{% url 'mascotas:avisar_receta' receta.pk %}"
+                                          class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-success"
+                                                title="Avisar por correo que la receta está lista">
+                                            Avisar
+                                        </button>
+                                    </form>
+                                {% endif %}
+                                {% if perms.mascotas.change_receta %}
+                                    <a href="{% url 'mascotas:editar_receta' receta.pk %}" class="btn btn-sm btn-outline-primary">Editar</a>
+                                {% endif %}
+                                {% if perms.mascotas.delete_receta %}
+                                    <a href="{% url 'mascotas:eliminar_receta' receta.pk %}" class="btn btn-sm btn-outline-danger">Eliminar</a>
+                                {% endif %}
+                            </td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% include 'mascotas/_paginacion.html' %}
+{% else %}
+    <div class="alert alert-info">No hay recetas registradas.</div>
+{% endif %}
+{% endblock %}

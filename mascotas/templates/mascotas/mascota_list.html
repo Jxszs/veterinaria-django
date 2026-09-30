@@ -85,7 +85,9 @@
                             <span class="badge badge-alergia">🟡 Alergia</span>
                         {% elif mascota.vacunado %}
                             <span class="badge badge-al-dia">🟢 Sí</span>
-                        {% else %}
+
+    {% include 'mascotas/_paginacion.html' %}
+{% else %}
                             <span class="badge badge-pendiente">🔴 No</span>
                         {% endif %}
                     </td>
